@@ -1,0 +1,93 @@
+import { Language, LANGUAGE_FLAGS } from '@/types';
+import { motion, AnimatePresence } from 'framer-motion';
+
+interface SentenceDisplayProps {
+  text1: string;
+  text2: string;
+  lang1: Language;
+  lang2: Language;
+  activeLang: 1 | 2 | null;
+  sentenceNumber: number;
+  totalSentences: number;
+}
+
+export function SentenceDisplay({
+  text1,
+  text2,
+  lang1,
+  lang2,
+  activeLang,
+  sentenceNumber,
+  totalSentences,
+}: SentenceDisplayProps) {
+  return (
+    <div className="flex flex-col gap-6 px-2">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>Sentence {sentenceNumber}</span>
+        <span>{sentenceNumber} / {totalSentences}</span>
+      </div>
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={`${sentenceNumber}-1`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className={`rounded-xl p-5 transition-all ${
+            activeLang === 1
+              ? 'bg-primary/10 border-2 border-primary/30'
+              : 'bg-card border border-border'
+          }`}
+        >
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="text-sm">{LANGUAGE_FLAGS[lang1]}</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase">
+              Language 1
+            </span>
+            {activeLang === 1 && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="ml-auto flex h-2 w-2 rounded-full bg-primary"
+              >
+                <span className="animate-ping h-full w-full rounded-full bg-primary/60" />
+              </motion.span>
+            )}
+          </div>
+          <p className="font-serif text-lg leading-relaxed">{text1}</p>
+        </motion.div>
+      </AnimatePresence>
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={`${sentenceNumber}-2`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+          className={`rounded-xl p-5 transition-all ${
+            activeLang === 2
+              ? 'bg-accent/10 border-2 border-accent/30'
+              : 'bg-card border border-border'
+          }`}
+        >
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="text-sm">{LANGUAGE_FLAGS[lang2]}</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase">
+              Language 2
+            </span>
+            {activeLang === 2 && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="ml-auto flex h-2 w-2 rounded-full bg-accent"
+              >
+                <span className="animate-ping h-full w-full rounded-full bg-accent/60" />
+              </motion.span>
+            )}
+          </div>
+          <p className="font-serif text-lg leading-relaxed">{text2}</p>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
