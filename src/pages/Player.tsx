@@ -4,7 +4,7 @@ import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
-import { Settings2, ChevronDown, BookOpen } from 'lucide-react';
+import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Player() {
@@ -14,6 +14,7 @@ export default function Player() {
   const {
     currentIndex,
     isPlaying,
+    isLoading,
     activeLang,
     settings,
     setSettings,
@@ -90,6 +91,14 @@ export default function Player() {
           totalSentences={totalSentences}
         />
       </div>
+
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Generating audio…</span>
+        </div>
+      )}
 
       {/* Player Controls */}
       <div className="pb-4">
