@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { demoSentences, demoBooks } from '@/data/demo';
+import { useState, useMemo } from 'react';
+import { useParams, Navigate } from 'react-router-dom';
+import { demoBooks, demoSentencesByBook } from '@/data/demo';
 import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
@@ -8,8 +9,13 @@ import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Player() {
+  const { bookId } = useParams<{ bookId: string }>();
   const [showSettings, setShowSettings] = useState(false);
-  const book = demoBooks[0];
+
+  const book = useMemo(() => demoBooks.find((b) => b.id === bookId), [bookId]);
+  const sentences = useMemo(() => demoSentencesByBook[bookId || ''] || [], [bookId]);
+
+  if (!book) return <Navigate to="/" replace />;
 
   const {
     currentIndex,
@@ -24,7 +30,7 @@ export default function Player() {
     text1,
     text2,
     totalSentences,
-  } = usePlayer(demoSentences);
+  } = usePlayer(sentences);
 
   const progressPercent = ((currentIndex + 1) / totalSentences) * 100;
 

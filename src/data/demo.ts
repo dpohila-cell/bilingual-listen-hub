@@ -115,6 +115,42 @@ export const demoSentences: Sentence[] = [
   },
 ];
 
+export const demoSentencesByBook: Record<string, Sentence[]> = {
+  '1': demoSentences,
+  '2': [
+    {
+      id: 'ak1', chapterId: 'ak-ch1', sentenceOrder: 1,
+      originalText: 'Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему.',
+      ruTranslation: 'Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему.',
+      enTranslation: 'All happy families are alike; each unhappy family is unhappy in its own way.',
+      svTranslation: 'Alla lyckliga familjer liknar varandra; varje olycklig familj är olycklig på sitt eget sätt.',
+    },
+    {
+      id: 'ak2', chapterId: 'ak-ch1', sentenceOrder: 2,
+      originalText: 'Всё смешалось в доме Облонских.',
+      ruTranslation: 'Всё смешалось в доме Облонских.',
+      enTranslation: 'Everything was in confusion in the Oblonskys\' house.',
+      svTranslation: 'Allt var i oordning i familjen Oblonskijs hus.',
+    },
+  ],
+  '3': [
+    {
+      id: 'pl1', chapterId: 'pl-ch1', sentenceOrder: 1,
+      originalText: 'I utkanten av en liten stad låg en gammal trädgård.',
+      ruTranslation: 'На окраине маленького городка стоял старый сад.',
+      enTranslation: 'On the outskirts of a little town lay an old garden.',
+      svTranslation: 'I utkanten av en liten stad låg en gammal trädgård.',
+    },
+    {
+      id: 'pl2', chapterId: 'pl-ch1', sentenceOrder: 2,
+      originalText: 'Och i trädgården stod ett gammalt hus.',
+      ruTranslation: 'А в саду стоял старый дом.',
+      enTranslation: 'And in the garden stood an old house.',
+      svTranslation: 'Och i trädgården stod ett gammalt hus.',
+    },
+  ],
+};
+
 export const demoProgress: UserProgress = {
   bookId: '1',
   lastSentencePosition: 3,
