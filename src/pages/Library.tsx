@@ -31,7 +31,7 @@ export default function Library() {
         <BookCard
           book={demoBooks[0]}
           progress={demoProgress}
-          onClick={() => navigate('/player')}
+          onClick={() => navigate(`/player/${demoBooks[0].id}`)}
         />
       </section>
 
@@ -45,7 +45,7 @@ export default function Library() {
             <BookCard
               key={book.id}
               book={book}
-              onClick={() => navigate('/player')}
+              onClick={() => navigate(`/player/${book.id}`)}
             />
           ))}
         </div>
