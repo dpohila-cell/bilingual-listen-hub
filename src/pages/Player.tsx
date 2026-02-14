@@ -1,26 +1,81 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
-import { demoBooks, demoSentencesByBook } from '@/data/demo';
 import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import type { Sentence } from '@/types';
 
 export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [showSettings, setShowSettings] = useState(false);
+  const { user } = useAuth();
 
-  const book = useMemo(() => demoBooks.find((b) => b.id === bookId), [bookId]);
-  const sentences = useMemo(() => demoSentencesByBook[bookId || ''] || [], [bookId]);
+  const { data: book, isLoading: bookLoading } = useQuery({
+    queryKey: ['book', bookId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', bookId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!bookId,
+  });
 
-  if (!book) return <Navigate to="/" replace />;
+  const { data: dbSentences = [], isLoading: sentencesLoading } = useQuery({
+    queryKey: ['sentences', bookId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sentences')
+        .select('*')
+        .eq('book_id', bookId!)
+        .order('sentence_order', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!bookId && book?.status === 'ready',
+  });
+
+  const { data: savedProgress } = useQuery({
+    queryKey: ['progress', bookId, user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('user_progress')
+        .select('last_sentence_position')
+        .eq('book_id', bookId!)
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      return data?.last_sentence_position || 0;
+    },
+    enabled: !!bookId && !!user,
+  });
+
+  const sentences: Sentence[] = useMemo(
+    () =>
+      dbSentences.map((s) => ({
+        id: s.id,
+        chapterId: '',
+        sentenceOrder: s.sentence_order,
+        originalText: s.original_text,
+        enTranslation: s.en_translation || s.original_text,
+        ruTranslation: s.ru_translation || s.original_text,
+        svTranslation: s.sv_translation || s.original_text,
+      })),
+    [dbSentences]
+  );
 
   const {
     currentIndex,
     isPlaying,
-    isLoading,
+    isLoading: playerLoading,
     activeLang,
     settings,
     setSettings,
@@ -30,13 +85,39 @@ export default function Player() {
     text1,
     text2,
     totalSentences,
-  } = usePlayer(sentences);
+  } = usePlayer(sentences, savedProgress);
 
-  const progressPercent = ((currentIndex + 1) / totalSentences) * 100;
+  // Save progress on index change
+  useEffect(() => {
+    if (!bookId || !user || sentences.length === 0) return;
+    const timeout = setTimeout(async () => {
+      await supabase.from('user_progress').upsert(
+        {
+          user_id: user.id,
+          book_id: bookId,
+          last_sentence_position: currentIndex,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,book_id' }
+      );
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [currentIndex, bookId, user, sentences.length]);
+
+  if (bookLoading || sentencesLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!book) return <Navigate to="/" replace />;
+
+  const progressPercent = totalSentences > 0 ? ((currentIndex + 1) / totalSentences) * 100 : 0;
 
   return (
     <div className="flex flex-col gap-4 p-5 pt-10">
-      {/* Book Info Header */}
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary/80 to-primary">
           <BookOpen className="h-4 w-4 text-primary-foreground" />
@@ -55,7 +136,6 @@ export default function Player() {
         </button>
       </div>
 
-      {/* Progress Bar */}
       <div className="h-1 rounded-full bg-muted overflow-hidden">
         <motion.div
           className="h-full bg-primary rounded-full"
@@ -64,7 +144,6 @@ export default function Player() {
         />
       </div>
 
-      {/* Settings Panel */}
       <AnimatePresence>
         {showSettings && (
           <motion.div
@@ -85,7 +164,6 @@ export default function Player() {
         )}
       </AnimatePresence>
 
-      {/* Sentence Display */}
       <div className="flex-1 py-4">
         <SentenceDisplay
           text1={text1}
@@ -98,15 +176,13 @@ export default function Player() {
         />
       </div>
 
-      {/* Loading indicator */}
-      {isLoading && (
+      {playerLoading && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Generating audio…</span>
         </div>
       )}
 
-      {/* Player Controls */}
       <div className="pb-4">
         <PlayerControls
           isPlaying={isPlaying}

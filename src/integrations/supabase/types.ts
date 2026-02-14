@@ -14,13 +14,139 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      books: {
+        Row: {
+          author: string | null
+          created_at: string
+          file_path: string | null
+          id: string
+          original_language: string
+          sentence_count: number
+          status: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          author?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          original_language?: string
+          sentence_count?: number
+          status?: string
+          title?: string
+          user_id: string
+        }
+        Update: {
+          author?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          original_language?: string
+          sentence_count?: number
+          status?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      sentences: {
+        Row: {
+          book_id: string
+          created_at: string
+          en_translation: string | null
+          id: string
+          original_text: string
+          ru_translation: string | null
+          sentence_order: number
+          sv_translation: string | null
+        }
+        Insert: {
+          book_id: string
+          created_at?: string
+          en_translation?: string | null
+          id?: string
+          original_text: string
+          ru_translation?: string | null
+          sentence_order: number
+          sv_translation?: string | null
+        }
+        Update: {
+          book_id?: string
+          created_at?: string
+          en_translation?: string | null
+          id?: string
+          original_text?: string
+          ru_translation?: string | null
+          sentence_order?: number
+          sv_translation?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sentences_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_progress: {
+        Row: {
+          book_id: string
+          id: string
+          last_sentence_position: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          book_id: string
+          id?: string
+          last_sentence_position?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          book_id?: string
+          id?: string
+          last_sentence_position?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_progress_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      user_owns_book: { Args: { _book_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

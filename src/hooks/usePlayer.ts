@@ -33,8 +33,15 @@ function speakText(text: string, language: Language, speed: number): Promise<voi
   });
 }
 
-export function usePlayer(sentences: Sentence[]) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+export function usePlayer(sentences: Sentence[], initialIndex?: number) {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
+
+  // Update index when initialIndex loads
+  useEffect(() => {
+    if (initialIndex != null && initialIndex > 0 && sentences.length > 0) {
+      setCurrentIndex(Math.min(initialIndex, sentences.length - 1));
+    }
+  }, [initialIndex, sentences.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeLang, setActiveLang] = useState<1 | 2 | null>(null);
