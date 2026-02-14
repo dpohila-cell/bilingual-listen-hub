@@ -20,14 +20,12 @@ export default function AuthPage() {
   const { signIn, signUp, resetPassword, updatePassword, session } = useAuth();
   const navigate = useNavigate();
 
-  // If user arrived via password reset link
   useEffect(() => {
     if (searchParams.get('mode') === 'reset' && session) {
       setMode('reset');
     }
   }, [searchParams, session]);
 
-  // Redirect if already logged in (and not resetting password)
   useEffect(() => {
     if (session && mode !== 'reset') {
       navigate('/');
@@ -51,19 +49,19 @@ export default function AuthPage() {
       const { error } = await resetPassword(email);
       if (error) setError(error.message);
       else {
-        toast.success('Ссылка для сброса отправлена на ' + email);
+        toast.success('Reset link sent to ' + email);
         setMode('login');
       }
     } else if (mode === 'reset') {
       if (password.length < 6) {
-        setError('Пароль должен быть не менее 6 символов');
+        setError('Password must be at least 6 characters');
         setLoading(false);
         return;
       }
       const { error } = await updatePassword(password);
       if (error) setError(error.message);
       else {
-        toast.success('Пароль успешно обновлён');
+        toast.success('Password updated successfully');
         navigate('/');
       }
     }
@@ -81,12 +79,12 @@ export default function AuthPage() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
             <BookOpen className="h-8 w-8 text-primary" />
           </div>
-          <h2 className="font-serif text-xl">Проверьте почту</h2>
+          <h2 className="font-serif text-xl">Check your email</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Мы отправили ссылку для подтверждения на <strong>{email}</strong>
+            We sent a confirmation link to <strong>{email}</strong>
           </p>
           <Button variant="outline" className="mt-6" onClick={() => { setConfirmationSent(false); setMode('login'); }}>
-            Вернуться к входу
+            Back to sign in
           </Button>
         </motion.div>
       </div>
@@ -94,17 +92,17 @@ export default function AuthPage() {
   }
 
   const titles: Record<AuthMode, string> = {
-    login: 'Войдите в библиотеку',
-    signup: 'Создайте аккаунт',
-    forgot: 'Сброс пароля',
-    reset: 'Новый пароль',
+    login: 'Sign in to your library',
+    signup: 'Create an account',
+    forgot: 'Reset password',
+    reset: 'New password',
   };
 
   const buttonLabels: Record<AuthMode, string> = {
-    login: 'Войти',
-    signup: 'Зарегистрироваться',
-    forgot: 'Отправить ссылку',
-    reset: 'Сохранить пароль',
+    login: 'Sign In',
+    signup: 'Sign Up',
+    forgot: 'Send reset link',
+    reset: 'Save password',
   };
 
   return (
@@ -135,7 +133,7 @@ export default function AuthPage() {
           {(mode === 'login' || mode === 'signup' || mode === 'reset') && (
             <Input
               type="password"
-              placeholder={mode === 'reset' ? 'Новый пароль' : 'Пароль'}
+              placeholder={mode === 'reset' ? 'New password' : 'Password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -154,28 +152,28 @@ export default function AuthPage() {
             onClick={() => { setMode('forgot'); setError(''); }}
             className="mt-3 block w-full text-center text-xs text-muted-foreground hover:text-primary transition-colors"
           >
-            Забыли пароль?
+            Forgot password?
           </button>
         )}
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
           {mode === 'login' && (
-            <>Нет аккаунта?{' '}
+            <>Don't have an account?{' '}
               <button onClick={() => { setMode('signup'); setError(''); }} className="font-medium text-primary hover:underline">
-                Зарегистрироваться
+                Sign Up
               </button>
             </>
           )}
           {mode === 'signup' && (
-            <>Уже есть аккаунт?{' '}
+            <>Already have an account?{' '}
               <button onClick={() => { setMode('login'); setError(''); }} className="font-medium text-primary hover:underline">
-                Войти
+                Sign In
               </button>
             </>
           )}
           {(mode === 'forgot' || mode === 'reset') && (
             <button onClick={() => { setMode('login'); setError(''); }} className="font-medium text-primary hover:underline">
-              Вернуться к входу
+              Back to sign in
             </button>
           )}
         </p>

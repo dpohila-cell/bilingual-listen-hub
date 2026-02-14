@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useGenerateAudio } from '@/hooks/useGenerateAudio';
-import { Settings2, ChevronDown, BookOpen, Loader2, Volume2 } from 'lucide-react';
+import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,6 +17,7 @@ export default function Player() {
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuth();
   const { isGenerating, progress: genProgress, error: genError, generateBoth } = useGenerateAudio(bookId);
+  const audioTriggeredRef = useRef<string | null>(null);
 
   const { data: book, isLoading: bookLoading } = useQuery({
     queryKey: ['book', bookId],
@@ -88,6 +89,17 @@ export default function Player() {
     text2,
     totalSentences,
   } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
+
+  // Auto-generate audio when player opens
+  useEffect(() => {
+    if (!bookId || !book || book.status !== 'ready' || isGenerating) return;
+    if (audioTriggeredRef.current === bookId) return;
+
+    const lang1 = settings.language1;
+    const lang2 = settings.language2;
+    audioTriggeredRef.current = bookId;
+    generateBoth(lang1, lang2);
+  }, [bookId, book?.status, settings.language1, settings.language2]);
 
   // Save progress on index change
   useEffect(() => {
@@ -177,31 +189,20 @@ export default function Player() {
           totalSentences={totalSentences}
         />
 
-        {/* Generate Audio Button */}
-        <div className="mt-4 flex flex-col items-center gap-2">
-          <button
-            onClick={() => generateBoth(settings.language1, settings.language2)}
-            disabled={isGenerating}
-            className="flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
-          >
-            {isGenerating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Volume2 className="h-4 w-4" />
-            )}
-            {isGenerating ? genProgress : 'Сгенерировать аудио'}
-          </button>
-          {genError && <p className="text-xs text-destructive">{genError}</p>}
-          {genProgress && !isGenerating && !genError && (
-            <p className="text-xs text-muted-foreground">{genProgress}</p>
-          )}
-        </div>
+        {/* Audio generation status indicator */}
+        {isGenerating && (
+          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>{genProgress || 'Preparing audio…'}</span>
+          </div>
+        )}
+        {genError && <p className="mt-2 text-center text-xs text-destructive">{genError}</p>}
       </div>
 
       {playerLoading && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Generating audio…</span>
+          <span>Loading audio…</span>
         </div>
       )}
 
