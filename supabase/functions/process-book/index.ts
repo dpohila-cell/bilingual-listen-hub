@@ -14,6 +14,8 @@ function splitIntoSentences(text: string): string[] {
     .filter((s) => s.length > 2);
 }
 
+const MAX_SENTENCES = 100; // Limit to avoid timeout
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -32,7 +34,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
-    // User client for auth validation
     const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -44,9 +45,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Service client for admin operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
     const { bookId, filePath } = await req.json();
 
     // Download file from storage
@@ -62,7 +61,7 @@ Deno.serve(async (req) => {
     }
 
     const text = await fileData.text();
-    const sentences = splitIntoSentences(text);
+    let sentences = splitIntoSentences(text);
 
     if (sentences.length === 0) {
       await supabase.from("books").update({ status: "error" }).eq("id", bookId);
@@ -71,6 +70,15 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Limit sentences to avoid timeout
+    const truncated = sentences.length > MAX_SENTENCES;
+    if (truncated) {
+      sentences = sentences.slice(0, MAX_SENTENCES);
+    }
+
+    // Delete any existing sentences for this book (in case of retry)
+    await supabase.from("sentences").delete().eq("book_id", bookId);
 
     // Process in batches of 10 sentences for translation
     const BATCH_SIZE = 10;
@@ -92,47 +100,60 @@ No extra text, no markdown fences. Just the JSON array.
 Sentences:
 ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
 
-      const aiResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.2,
-          }),
-        }
-      );
-
-      const aiData = await aiResponse.json();
-      let translations: Array<{ en: string; ru: string; sv: string }>;
-
       try {
-        let content = aiData.choices[0].message.content.trim();
-        // Strip markdown fences if present
-        if (content.startsWith("```")) {
-          content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-        }
-        translations = JSON.parse(content);
-      } catch {
-        // Fallback: use original text for all
-        translations = batch.map((s) => ({ en: s, ru: s, sv: s }));
-      }
+        const aiResponse = await fetch(
+          "https://ai.gateway.lovable.dev/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${lovableApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0.2,
+            }),
+          }
+        );
 
-      for (let j = 0; j < batch.length; j++) {
-        const t = translations[j] || { en: batch[j], ru: batch[j], sv: batch[j] };
-        allRows.push({
-          book_id: bookId,
-          sentence_order: i + j + 1,
-          original_text: batch[j],
-          en_translation: t.en,
-          ru_translation: t.ru,
-          sv_translation: t.sv,
-        });
+        const aiData = await aiResponse.json();
+        let translations: Array<{ en: string; ru: string; sv: string }>;
+
+        try {
+          let content = aiData.choices[0].message.content.trim();
+          if (content.startsWith("```")) {
+            content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+          }
+          translations = JSON.parse(content);
+        } catch {
+          translations = batch.map((s) => ({ en: s, ru: s, sv: s }));
+        }
+
+        for (let j = 0; j < batch.length; j++) {
+          const t = translations[j] || { en: batch[j], ru: batch[j], sv: batch[j] };
+          allRows.push({
+            book_id: bookId,
+            sentence_order: i + j + 1,
+            original_text: batch[j],
+            en_translation: t.en,
+            ru_translation: t.ru,
+            sv_translation: t.sv,
+          });
+        }
+      } catch (err) {
+        console.error(`Translation batch ${i} failed:`, err);
+        // Fallback: use original text
+        for (let j = 0; j < batch.length; j++) {
+          allRows.push({
+            book_id: bookId,
+            sentence_order: i + j + 1,
+            original_text: batch[j],
+            en_translation: batch[j],
+            ru_translation: batch[j],
+            sv_translation: batch[j],
+          });
+        }
       }
     }
 
@@ -147,14 +168,13 @@ ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
       });
     }
 
-    // Update book status
     await supabase
       .from("books")
       .update({ status: "ready", sentence_count: allRows.length })
       .eq("id", bookId);
 
     return new Response(
-      JSON.stringify({ success: true, sentenceCount: allRows.length }),
+      JSON.stringify({ success: true, sentenceCount: allRows.length, truncated }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
