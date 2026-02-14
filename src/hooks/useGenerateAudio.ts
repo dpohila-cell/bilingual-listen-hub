@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Language } from '@/types';
 import { VOICE_OPTIONS } from '@/types';
+import { clearAudioCache } from './usePlayer';
 
 interface GenerateAudioState {
   isGenerating: boolean;
@@ -70,8 +71,9 @@ export function useGenerateAudio(bookId: string | undefined) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed');
 
-      // Save voice to cache
+      // Save voice to cache and clear audio player cache
       if (voice) setVoiceCacheEntry(bookId, language, voice);
+      if (forceRegenerate) clearAudioCache();
 
       setState({
         isGenerating: false,
@@ -117,6 +119,7 @@ export function useGenerateAudio(bookId: string | undefined) {
         if (!response.ok) throw new Error(result.error || `Generation failed for ${lang}`);
 
         if (voice) setVoiceCacheEntry(bookId, lang, voice);
+        if (forceRegenerate) clearAudioCache();
       }
 
       setState({ isGenerating: false, progress: 'All audio generated!', error: null });

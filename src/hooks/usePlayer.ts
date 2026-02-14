@@ -52,14 +52,24 @@ function getAudioUrl(bookId: string, language: Language, sentenceOrder: number):
 // Prefetch and cache audio elements
 const audioCache = new Map<string, HTMLAudioElement>();
 
+export function clearAudioCache() {
+  audioCache.forEach((audio) => {
+    audio.pause();
+    audio.src = '';
+  });
+  audioCache.clear();
+}
+
 function prefetchAudio(bookId: string, language: Language, sentenceOrder: number): HTMLAudioElement {
   const key = `${bookId}/${language}/${sentenceOrder}`;
   if (audioCache.has(key)) return audioCache.get(key)!;
 
   const url = getAudioUrl(bookId, language, sentenceOrder);
+  // Add cache-busting param to force reload after regeneration
+  const bustUrl = `${url}?t=${Date.now()}`;
   const audio = new Audio();
   audio.preload = 'auto';
-  audio.src = url;
+  audio.src = bustUrl;
   audioCache.set(key, audio);
   return audio;
 }
