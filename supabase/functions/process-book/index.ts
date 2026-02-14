@@ -146,16 +146,10 @@ Deno.serve(async (req) => {
     // Delete any existing sentences for this book (in case of retry)
     await supabase.from("sentences").delete().eq("book_id", bookId);
 
-    // Process in batches of 10 sentences for translation
+    // Process in batches of 25 sentences for translation
+    // Each batch is saved immediately to survive timeouts
     const BATCH_SIZE = 25;
-    const allRows: Array<{
-      book_id: string;
-      sentence_order: number;
-      original_text: string;
-      en_translation: string;
-      ru_translation: string;
-      sv_translation: string;
-    }> = [];
+    let totalSaved = 0;
 
     for (let i = 0; i < sentences.length; i += BATCH_SIZE) {
       const batch = sentences.slice(i, i + BATCH_SIZE);
@@ -165,6 +159,15 @@ No extra text, no markdown fences. Just the JSON array.
 
 Sentences:
 ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
+
+      let batchRows: Array<{
+        book_id: string;
+        sentence_order: number;
+        original_text: string;
+        en_translation: string;
+        ru_translation: string;
+        sv_translation: string;
+      }> = [];
 
       try {
         const aiResponse = await fetch(
@@ -198,7 +201,7 @@ ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
 
         for (let j = 0; j < batch.length; j++) {
           const t = translations[j] || { en: batch[j], ru: batch[j], sv: batch[j] };
-          allRows.push({
+          batchRows.push({
             book_id: bookId,
             sentence_order: i + j + 1,
             original_text: batch[j],
@@ -209,9 +212,8 @@ ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
         }
       } catch (err) {
         console.error(`Translation batch ${i} failed:`, err);
-        // Fallback: use original text
         for (let j = 0; j < batch.length; j++) {
-          allRows.push({
+          batchRows.push({
             book_id: bookId,
             sentence_order: i + j + 1,
             original_text: batch[j],
@@ -221,26 +223,32 @@ ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
           });
         }
       }
-    }
 
-    // Insert sentences
-    const { error: insertError } = await supabase.from("sentences").insert(allRows);
-    if (insertError) {
-      console.error("Insert error:", insertError);
-      await supabase.from("books").update({ status: "error" }).eq("id", bookId);
-      return new Response(JSON.stringify({ error: "Failed to save sentences" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      // Insert this batch immediately
+      const { error: insertError } = await supabase.from("sentences").insert(batchRows);
+      if (insertError) {
+        console.error(`Insert error for batch starting at ${i}:`, insertError);
+        // Continue with next batch instead of failing entirely
+      } else {
+        totalSaved += batchRows.length;
+      }
+
+      // Update book with progress so far
+      await supabase
+        .from("books")
+        .update({ sentence_count: totalSaved })
+        .eq("id", bookId);
+
+      console.log(`Batch ${i}-${i + batch.length} saved. Total: ${totalSaved}/${sentences.length}`);
     }
 
     await supabase
       .from("books")
-      .update({ status: "ready", sentence_count: allRows.length })
+      .update({ status: "ready", sentence_count: totalSaved })
       .eq("id", bookId);
 
     return new Response(
-      JSON.stringify({ success: true, sentenceCount: allRows.length }),
+      JSON.stringify({ success: true, sentenceCount: totalSaved }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
