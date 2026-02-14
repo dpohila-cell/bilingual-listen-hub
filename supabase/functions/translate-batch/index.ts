@@ -85,12 +85,16 @@ Deno.serve(async (req) => {
     const sourceLang = langNames[originalLanguage] || "Russian";
 
     // Translate
-    const prompt = `The following sentences are in ${sourceLang}. Translate each sentence into English, Russian, and Swedish.
-For the ${sourceLang} column, keep the original text as-is.
-Return ONLY a JSON array where each element has: {"en": "...", "ru": "...", "sv": "..."}
+    const prompt = `I have sentences written in ${sourceLang}. I need you to translate them.
+
+IMPORTANT: The "en" field MUST contain the ENGLISH translation. The "ru" field MUST contain the RUSSIAN text. The "sv" field MUST contain the SWEDISH translation.
+${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ''}
+${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ''}
+
+Return ONLY a JSON array where each element has: {"en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
 No extra text, no markdown fences. Just the JSON array.
 
-Sentences:
+Sentences to translate:
 ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
 
     let translations: Array<{ en: string; ru: string; sv: string }>;
@@ -110,15 +114,34 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
           }),
         }
       );
+      if (!aiResponse.ok) {
+        const errBody = await aiResponse.text();
+        console.error("AI gateway error:", aiResponse.status, errBody);
+        return new Response(JSON.stringify({ error: `AI error: ${aiResponse.status}`, details: errBody }), {
+          status: aiResponse.status === 402 ? 402 : aiResponse.status === 429 ? 429 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       const aiData = await aiResponse.json();
-      let content = aiData.choices[0].message.content.trim();
+      let content = aiData.choices?.[0]?.message?.content?.trim();
+      if (!content) {
+        console.error("No content in AI response:", JSON.stringify(aiData).substring(0, 500));
+        return new Response(JSON.stringify({ error: "AI returned empty content" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       if (content.startsWith("```")) {
         content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
       }
       translations = JSON.parse(content);
-    } catch {
-      translations = untranslated.map((s) => ({ en: s.original_text, ru: s.original_text, sv: s.original_text }));
+    } catch (aiErr) {
+      console.error("AI translation failed:", aiErr);
+      return new Response(JSON.stringify({ error: "Translation failed", details: String(aiErr) }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Update each sentence with translations

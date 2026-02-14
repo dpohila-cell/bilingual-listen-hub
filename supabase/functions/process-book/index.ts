@@ -58,12 +58,16 @@ async function translateBatch(
   const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
   const sourceLang = langNames[originalLanguage] || "Russian";
   
-  const prompt = `The following sentences are in ${sourceLang}. Translate each sentence into English, Russian, and Swedish.
-For the ${sourceLang} column, keep the original text as-is.
-Return ONLY a JSON array where each element has: {"en": "...", "ru": "...", "sv": "..."}
+  const prompt = `I have sentences written in ${sourceLang}. I need you to translate them.
+
+IMPORTANT: The "en" field MUST contain the ENGLISH translation. The "ru" field MUST contain the RUSSIAN text. The "sv" field MUST contain the SWEDISH translation.
+${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ''}
+${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ''}
+
+Return ONLY a JSON array where each element has: {"en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
 No extra text, no markdown fences. Just the JSON array.
 
-Sentences:
+Sentences to translate:
 ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
 
   try {
@@ -83,8 +87,17 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
       }
     );
 
+    if (!aiResponse.ok) {
+      console.error("AI gateway error in process-book:", aiResponse.status, await aiResponse.text());
+      return sentences.map((s) => ({ en: s, ru: s, sv: s }));
+    }
+
     const aiData = await aiResponse.json();
-    let content = aiData.choices[0].message.content.trim();
+    let content = aiData.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      console.error("No content from AI in process-book");
+      return sentences.map((s) => ({ en: s, ru: s, sv: s }));
+    }
     if (content.startsWith("```")) {
       content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     }
