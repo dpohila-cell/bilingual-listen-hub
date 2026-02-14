@@ -1,0 +1,182 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const AI_BATCH_SIZE = 25;
+const MAX_PER_CALL = 25; // 1 AI call per function invocation to avoid timeout
+
+async function translateBatch(
+  sentences: Array<{ id: string; original_text: string }>,
+  lovableApiKey: string,
+  originalLanguage: string
+): Promise<Array<{ en: string; ru: string; sv: string }>> {
+  const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
+  const sourceLang = langNames[originalLanguage] || "Russian";
+
+  const prompt = `I have sentences written in ${sourceLang}. I need you to translate them.
+
+IMPORTANT: The "en" field MUST contain the ENGLISH translation. The "ru" field MUST contain the RUSSIAN text. The "sv" field MUST contain the SWEDISH translation.
+${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ''}
+${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ''}
+
+Return ONLY a JSON array where each element has: {"en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
+No extra text, no markdown fences. Just the JSON array.
+
+Sentences to translate:
+${sentences.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
+
+  const aiResponse = await fetch(
+    "https://ai.gateway.lovable.dev/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+      }),
+    }
+  );
+
+  if (!aiResponse.ok) {
+    const errText = await aiResponse.text();
+    throw new Error(`AI error ${aiResponse.status}: ${errText}`);
+  }
+
+  const aiData = await aiResponse.json();
+  let content = aiData.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new Error("AI returned empty content");
+  if (content.startsWith("```")) {
+    content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+  }
+  return JSON.parse(content);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const { bookId } = await req.json();
+
+    if (!bookId) {
+      return new Response(JSON.stringify({ error: "Missing bookId" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: book } = await supabase
+      .from("books").select("id, user_id, original_language").eq("id", bookId).single();
+    if (!book || book.user_id !== user.id) {
+      return new Response(JSON.stringify({ error: "Not found or not owned" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const originalLanguage = book.original_language || "en";
+
+    // Fetch up to MAX_PER_CALL untranslated sentences
+    const { data: untranslated, error: fetchErr } = await supabase
+      .from("sentences")
+      .select("id, sentence_order, original_text")
+      .eq("book_id", bookId)
+      .is("en_translation", null)
+      .order("sentence_order", { ascending: true })
+      .limit(MAX_PER_CALL);
+
+    if (fetchErr) throw fetchErr;
+
+    if (!untranslated || untranslated.length === 0) {
+      return new Response(JSON.stringify({ message: "All translated", translated: 0, hasMore: false }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log(`translate-all: processing ${untranslated.length} sentences for book ${bookId}`);
+
+    let totalTranslated = 0;
+
+    for (let i = 0; i < untranslated.length; i += AI_BATCH_SIZE) {
+      const batch = untranslated.slice(i, i + AI_BATCH_SIZE);
+
+      try {
+        const translations = await translateBatch(batch, lovableApiKey, originalLanguage);
+
+        for (let j = 0; j < batch.length; j++) {
+          const t = translations[j];
+          if (!t) continue;
+          const { error: updateErr } = await supabase
+            .from("sentences")
+            .update({
+              en_translation: t.en,
+              ru_translation: t.ru,
+              sv_translation: t.sv,
+            })
+            .eq("id", batch[j].id);
+          if (!updateErr) totalTranslated++;
+        }
+      } catch (err) {
+        console.error(`translate-all batch error at ${i}:`, err);
+        // If rate limited, stop and let client retry
+        if (String(err).includes("429")) {
+          return new Response(JSON.stringify({
+            translated: totalTranslated,
+            hasMore: true,
+            retryAfter: 10,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
+    // Check if there are more untranslated sentences
+    const { count } = await supabase
+      .from("sentences")
+      .select("id", { count: "exact", head: true })
+      .eq("book_id", bookId)
+      .is("en_translation", null);
+
+    const hasMore = (count || 0) > 0;
+
+    console.log(`translate-all: ${totalTranslated} done, hasMore: ${hasMore}`);
+
+    return new Response(
+      JSON.stringify({ success: true, translated: totalTranslated, hasMore }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    console.error("translate-all error:", err);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
