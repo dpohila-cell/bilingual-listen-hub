@@ -1,44 +1,10 @@
 import { PlaybackSettings as PlaybackSettingsType, Language, VOICE_OPTIONS } from '@/types';
 import { LanguagePicker } from './LanguagePicker';
-import { ArrowDownUp, Timer, Gauge, Mic } from 'lucide-react';
+import { ArrowDownUp, Timer, Gauge } from 'lucide-react';
 
 interface PlaybackSettingsProps {
   settings: PlaybackSettingsType;
   onUpdate: (settings: PlaybackSettingsType) => void;
-}
-
-function VoicePicker({ language, value, onChange, label }: {
-  language: Language;
-  value?: string;
-  onChange: (voiceId: string) => void;
-  label: string;
-}) {
-  const voices = VOICE_OPTIONS[language];
-  const currentVoice = value || voices[0]?.id;
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        <Mic className="h-3.5 w-3.5" />
-        {label}
-      </span>
-      <div className="flex flex-wrap gap-2">
-        {voices.map((voice) => (
-          <button
-            key={voice.id}
-            onClick={() => onChange(voice.id)}
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-              currentVoice === voice.id
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-card text-foreground border border-border hover:bg-muted'
-            }`}
-          >
-            {voice.name} ({voice.gender})
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export function PlaybackSettingsPanel({ settings, onUpdate }: PlaybackSettingsProps) {
@@ -54,16 +20,8 @@ export function PlaybackSettingsPanel({ settings, onUpdate }: PlaybackSettingsPr
             ...settings,
             language1: lang,
             language2: settings.language2 === lang ? settings.language1 : settings.language2,
-            voice1: VOICE_OPTIONS[lang][0]?.id,
           })
         }
-      />
-
-      <VoicePicker
-        language={settings.language1}
-        value={settings.voice1}
-        onChange={(voiceId) => onUpdate({ ...settings, voice1: voiceId })}
-        label="Voice 1"
       />
 
       <LanguagePicker
@@ -74,17 +32,9 @@ export function PlaybackSettingsPanel({ settings, onUpdate }: PlaybackSettingsPr
             ...settings,
             language2: lang,
             language1: settings.language1 === lang ? settings.language2 : settings.language1,
-            voice2: VOICE_OPTIONS[lang][0]?.id,
           })
         }
         exclude={settings.language1}
-      />
-
-      <VoicePicker
-        language={settings.language2}
-        value={settings.voice2}
-        onChange={(voiceId) => onUpdate({ ...settings, voice2: voiceId })}
-        label="Voice 2"
       />
 
       <div className="flex flex-col gap-1.5">

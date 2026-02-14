@@ -81,7 +81,7 @@ serve(async (req) => {
       });
     }
 
-    const { bookId, language, voice } = await req.json();
+    const { bookId, language, voice, forceRegenerate } = await req.json();
     if (!bookId || !language) {
       return new Response(JSON.stringify({ error: "Missing bookId or language" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -117,6 +117,15 @@ serve(async (req) => {
     const languageCode = LANG_CODE_MAP[language] || defaultVoice.languageCode;
 
     const storagePath = `${bookId}/${language}`;
+
+    // If forceRegenerate, delete existing audio files first
+    if (forceRegenerate) {
+      const { data: existingFiles } = await adminClient.storage.from("audio").list(storagePath);
+      if (existingFiles && existingFiles.length > 0) {
+        const filesToDelete = existingFiles.map((f: { name: string }) => `${storagePath}/${f.name}`);
+        await adminClient.storage.from("audio").remove(filesToDelete);
+      }
+    }
 
     const { data: existingFiles } = await adminClient.storage.from("audio").list(storagePath);
     const existingSet = new Set((existingFiles || []).map((f: { name: string }) => f.name));

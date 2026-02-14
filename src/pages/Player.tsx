@@ -5,6 +5,7 @@ import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useGenerateAudio } from '@/hooks/useGenerateAudio';
+import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
@@ -17,6 +18,7 @@ export default function Player() {
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuth();
   const { isGenerating, progress: genProgress, error: genError, generateBoth } = useGenerateAudio(bookId);
+  const { voiceSettings, getVoice } = useVoiceSettings();
   const audioTriggeredRef = useRef<string | null>(null);
 
   const { data: book, isLoading: bookLoading } = useQuery({
@@ -90,16 +92,18 @@ export default function Player() {
     totalSentences,
   } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
 
-  // Auto-generate audio when player opens
+  // Auto-generate audio when player opens or voice settings change
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || isGenerating) return;
-    if (audioTriggeredRef.current === bookId) return;
 
     const lang1 = settings.language1;
     const lang2 = settings.language2;
-    audioTriggeredRef.current = bookId;
-    generateBoth(lang1, lang2);
-  }, [bookId, book?.status, settings.language1, settings.language2]);
+    const voiceKey = `${bookId}-${voiceSettings.version}`;
+    if (audioTriggeredRef.current === voiceKey) return;
+
+    audioTriggeredRef.current = voiceKey;
+    generateBoth(lang1, lang2, getVoice(lang1), getVoice(lang2));
+  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version]);
 
   // Save progress on index change
   useEffect(() => {
