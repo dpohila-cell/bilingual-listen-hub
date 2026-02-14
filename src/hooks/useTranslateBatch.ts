@@ -50,7 +50,8 @@ export function useTranslateBatch(bookId: string | undefined) {
         return false;
       }
       const result = await response.json();
-      return result.translated > 0 || result.message === 'Already translated';
+      // Return true only if new translations were actually created
+      return result.translated > 0;
     } catch (err) {
       console.error('Translate batch error:', err);
       requestedRangesRef.current.delete(startOrder);
