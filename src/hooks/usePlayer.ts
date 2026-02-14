@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PlaybackSettings, Language, Sentence } from '@/types';
-import { supabase } from '@/integrations/supabase/client';
 
 function getSentenceText(sentence: Sentence, lang: Language): string {
   const map: Record<Language, string> = {
@@ -11,40 +10,28 @@ function getSentenceText(sentence: Sentence, lang: Language): string {
   return map[lang] || sentence.originalText;
 }
 
-async function fetchTTSAudio(text: string, language: Language): Promise<HTMLAudioElement> {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tts`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-    },
-    body: JSON.stringify({ text, language }),
-  });
+const LANG_TO_BCP47: Record<Language, string> = {
+  en: 'en-US',
+  ru: 'ru-RU',
+  sv: 'sv-SE',
+};
 
-  if (!response.ok) {
-    throw new Error(`TTS request failed: ${response.status}`);
-  }
-
-  const audioBlob = await response.blob();
-  const audioUrl = URL.createObjectURL(audioBlob);
-  const audio = new Audio(audioUrl);
-  return audio;
-}
-
-function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<void> {
+function speakText(text: string, language: Language, speed: number): Promise<SpeechSynthesisUtterance> {
   return new Promise((resolve, reject) => {
-    audio.playbackRate = speed;
-    audio.onended = () => {
-      URL.revokeObjectURL(audio.src);
-      resolve();
-    };
-    audio.onerror = (e) => {
-      URL.revokeObjectURL(audio.src);
-      reject(e);
-    };
-    audio.play().catch(reject);
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = LANG_TO_BCP47[language] || 'en-US';
+    utterance.rate = speed;
+
+    // Try to find a voice matching the language
+    const voices = speechSynthesis.getVoices();
+    const langPrefix = language;
+    const match = voices.find(v => v.lang.startsWith(langPrefix)) ||
+                  voices.find(v => v.lang.startsWith(LANG_TO_BCP47[language]));
+    if (match) utterance.voice = match;
+
+    utterance.onend = () => resolve(utterance);
+    utterance.onerror = (e) => reject(e);
+    speechSynthesis.speak(utterance);
   });
 }
 
@@ -109,16 +96,10 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   }, [bookId]);
 
   const abortRef = useRef(false);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const stopCurrent = useCallback(() => {
     abortRef.current = true;
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
-      URL.revokeObjectURL(currentAudioRef.current.src);
-      currentAudioRef.current = null;
-    }
+    speechSynthesis.cancel();
   }, []);
 
   const wait = useCallback((ms: number) => {
@@ -155,15 +136,10 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const text2 = getSentenceText(sentence, lang2);
 
       try {
-        // Fetch and play language 1
-        setIsLoading(true);
+        // Play language 1
         setActiveLang(activeLang1);
-        const audio1 = await fetchTTSAudio(text1, lang1);
-        if (abortRef.current) return;
         setIsLoading(false);
-        currentAudioRef.current = audio1;
-        await playAudioElement(audio1, settings.playbackSpeed);
-        currentAudioRef.current = null;
+        await speakText(text1, lang1, settings.playbackSpeed);
         if (abortRef.current) return;
 
         // Pause between languages
@@ -171,15 +147,9 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         await wait(settings.pauseDuration * 1000);
         if (abortRef.current) return;
 
-        // Fetch and play language 2
-        setIsLoading(true);
+        // Play language 2
         setActiveLang(activeLang2);
-        const audio2 = await fetchTTSAudio(text2, lang2);
-        if (abortRef.current) return;
-        setIsLoading(false);
-        currentAudioRef.current = audio2;
-        await playAudioElement(audio2, settings.playbackSpeed);
-        currentAudioRef.current = null;
+        await speakText(text2, lang2, settings.playbackSpeed);
         if (abortRef.current) return;
 
         // Pause before next sentence
@@ -242,10 +212,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   useEffect(() => {
     return () => {
       abortRef.current = true;
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        URL.revokeObjectURL(currentAudioRef.current.src);
-      }
+      speechSynthesis.cancel();
     };
   }, []);
 
