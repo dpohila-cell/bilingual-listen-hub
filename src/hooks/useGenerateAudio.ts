@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Language } from '@/types';
+import { VOICE_OPTIONS } from '@/types';
 
 interface GenerateAudioState {
   isGenerating: boolean;
@@ -22,6 +23,20 @@ function setVoiceCacheEntry(bookId: string, lang: string, voiceId: string) {
   localStorage.setItem(VOICE_CACHE_KEY, JSON.stringify(cache));
 }
 
+function shouldForceRegenerate(bookId: string, lang: string, voice: string | undefined): boolean {
+  if (!voice) return false;
+  const cache = getVoiceCache();
+  const cacheKey = `${bookId}/${lang}`;
+  const cachedVoice = cache[cacheKey];
+  // If no cache entry, check if voice differs from the default
+  if (!cachedVoice) {
+    const defaultVoice = VOICE_OPTIONS[lang as Language]?.[0]?.id;
+    return voice !== defaultVoice;
+  }
+  // If cached, force only when different
+  return cachedVoice !== voice;
+}
+
 export function useGenerateAudio(bookId: string | undefined) {
   const [state, setState] = useState<GenerateAudioState>({
     isGenerating: false,
@@ -37,11 +52,7 @@ export function useGenerateAudio(bookId: string | undefined) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      // Check if voice changed - if so, force regenerate
-      const cache = getVoiceCache();
-      const cacheKey = `${bookId}/${language}`;
-      const cachedVoice = cache[cacheKey];
-      const forceRegenerate = !!voice && !!cachedVoice && cachedVoice !== voice;
+      const forceRegenerate = shouldForceRegenerate(bookId, language, voice);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-audio`,
@@ -80,16 +91,13 @@ export function useGenerateAudio(bookId: string | undefined) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const cache = getVoiceCache();
       const langs = [
         { lang: lang1, voice: voice1 },
         { lang: lang2, voice: voice2 },
       ];
 
       for (const { lang, voice } of langs) {
-        const cacheKey = `${bookId}/${lang}`;
-        const cachedVoice = cache[cacheKey];
-        const forceRegenerate = !!voice && !!cachedVoice && cachedVoice !== voice;
+        const forceRegenerate = shouldForceRegenerate(bookId, lang, voice);
 
         setState(s => ({ ...s, progress: `Generating audio (${lang})…` }));
         const response = await fetch(
