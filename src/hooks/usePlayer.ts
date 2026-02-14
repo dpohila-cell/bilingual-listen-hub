@@ -16,23 +16,65 @@ const LANG_TO_BCP47: Record<Language, string> = {
   sv: 'sv-SE',
 };
 
-function speakText(text: string, language: Language, speed: number): Promise<SpeechSynthesisUtterance> {
+// Split long text into chunks to avoid browser speechSynthesis length limits
+function splitTextIntoChunks(text: string, maxLength = 150): string[] {
+  if (text.length <= maxLength) return [text];
+  
+  const chunks: string[] = [];
+  let remaining = text;
+  
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLength) {
+      chunks.push(remaining);
+      break;
+    }
+    
+    // Try to split at sentence-ending punctuation
+    let splitIndex = -1;
+    for (let i = maxLength; i >= maxLength / 2; i--) {
+      if (/[.!?;,:]/.test(remaining[i])) {
+        splitIndex = i + 1;
+        break;
+      }
+    }
+    // Fallback: split at last space
+    if (splitIndex === -1) {
+      splitIndex = remaining.lastIndexOf(' ', maxLength);
+    }
+    if (splitIndex <= 0) {
+      splitIndex = maxLength;
+    }
+    
+    chunks.push(remaining.slice(0, splitIndex).trim());
+    remaining = remaining.slice(splitIndex).trim();
+  }
+  
+  return chunks;
+}
+
+function speakChunk(text: string, language: Language, speed: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = LANG_TO_BCP47[language] || 'en-US';
     utterance.rate = speed;
 
-    // Try to find a voice matching the language
     const voices = speechSynthesis.getVoices();
     const langPrefix = language;
     const match = voices.find(v => v.lang.startsWith(langPrefix)) ||
                   voices.find(v => v.lang.startsWith(LANG_TO_BCP47[language]));
     if (match) utterance.voice = match;
 
-    utterance.onend = () => resolve(utterance);
+    utterance.onend = () => resolve();
     utterance.onerror = (e) => reject(e);
     speechSynthesis.speak(utterance);
   });
+}
+
+async function speakText(text: string, language: Language, speed: number): Promise<void> {
+  const chunks = splitTextIntoChunks(text);
+  for (const chunk of chunks) {
+    await speakChunk(chunk, language, speed);
+  }
 }
 
 function getDefaultSettings(originalLanguage: Language): PlaybackSettings {
