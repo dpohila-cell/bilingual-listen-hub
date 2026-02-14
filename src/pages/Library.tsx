@@ -1,15 +1,30 @@
+import { useState } from 'react';
 import { BookCard } from '@/components/BookCard';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import type { Book, UserProgress } from '@/types';
 
 export default function Library() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [deleteBookId, setDeleteBookId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { data: books = [], isLoading: booksLoading } = useQuery({
     queryKey: ['books', user?.id],
@@ -69,6 +84,50 @@ export default function Library() {
   )?.[0];
   const continueBook = lastRead ? readyBooks.find((b) => b.id === lastRead.book_id) : undefined;
 
+  const deleteBookName = books.find((b) => b.id === deleteBookId)?.title || '';
+
+  const handleDelete = async () => {
+    if (!deleteBookId) return;
+    setIsDeleting(true);
+    try {
+      // Delete audio files from storage
+      const { data: audioFiles } = await supabase.storage.from('audio').list(deleteBookId);
+      if (audioFiles && audioFiles.length > 0) {
+        // List subdirectories (language folders)
+        for (const folder of audioFiles) {
+          const { data: langFiles } = await supabase.storage.from('audio').list(`${deleteBookId}/${folder.name}`);
+          if (langFiles && langFiles.length > 0) {
+            const paths = langFiles.map((f) => `${deleteBookId}/${folder.name}/${f.name}`);
+            await supabase.storage.from('audio').remove(paths);
+          }
+        }
+        // Also try to remove top-level files
+        const topPaths = audioFiles.map((f) => `${deleteBookId}/${f.name}`);
+        await supabase.storage.from('audio').remove(topPaths);
+      }
+
+      // Delete ebook file from storage
+      const book = books.find((b) => b.id === deleteBookId);
+      if (book) {
+        await supabase.storage.from('ebooks').remove([`${deleteBookId}`]);
+      }
+
+      // Delete progress, sentences, then book (order matters for FK)
+      await supabase.from('user_progress').delete().eq('book_id', deleteBookId);
+      await supabase.from('sentences').delete().eq('book_id', deleteBookId);
+      await supabase.from('books').delete().eq('id', deleteBookId);
+
+      queryClient.invalidateQueries({ queryKey: ['books'] });
+      queryClient.invalidateQueries({ queryKey: ['progress'] });
+      toast.success('Book deleted');
+    } catch (err: any) {
+      toast.error('Failed to delete book: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+      setDeleteBookId(null);
+    }
+  };
+
   if (booksLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -103,6 +162,7 @@ export default function Library() {
             book={continueBook}
             progress={getProgress(continueBook.id)}
             onClick={() => navigate(`/player/${continueBook.id}`)}
+            onDelete={setDeleteBookId}
           />
         </section>
       )}
@@ -124,11 +184,34 @@ export default function Library() {
                 book={book}
                 progress={getProgress(book.id)}
                 onClick={() => navigate(`/player/${book.id}`)}
+                onDelete={setDeleteBookId}
               />
             ))}
           </div>
         )}
       </section>
+
+      <AlertDialog open={!!deleteBookId} onOpenChange={(open) => !open && setDeleteBookId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete book?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deleteBookName}" will be permanently deleted along with all its audio. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
