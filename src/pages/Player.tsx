@@ -53,7 +53,7 @@ export default function Player() {
   const { voiceSettings, getVoice } = useVoiceSettings();
   const audioTriggeredRef = useRef<string | null>(null);
   const lastPrefetchTriggerRef = useRef<number>(-1);
-  const translationInProgressRef = useRef(false);
+  
 
   const { data: book, isLoading: bookLoading } = useQuery({
     queryKey: ['book', bookId],
@@ -76,7 +76,7 @@ export default function Player() {
     enabled: !!bookId && book?.status === 'ready',
   });
 
-  const { data: savedProgress } = useQuery({
+  const { data: savedProgress, isFetched: progressFetched } = useQuery({
     queryKey: ['progress', bookId, user?.id],
     queryFn: async () => {
       const { data } = await supabase
@@ -155,35 +155,31 @@ export default function Player() {
     forceRegenerate: boolean,
     silent: boolean,
   ) => {
-    if (!bookId || translationInProgressRef.current) return;
+    if (!bookId) return;
 
-    translationInProgressRef.current = true;
     if (!silent) setIsTranslating(true);
 
     try {
-      // Step 1: Translate if needed
-      const needsTranslation = !isTranslated(sentenceOrder);
-      if (needsTranslation) {
-        await translateRange(sentenceOrder);
-        // Refetch sentences to get updated translations
-        await queryClient.invalidateQueries({ queryKey: ['sentences', bookId] });
-        // Small delay for query to settle
-        await new Promise(r => setTimeout(r, 500));
-      }
+      // Step 1: Always call translate (server skips if already done)
+      await translateRange(sentenceOrder);
+      
+      // Step 2: Wait for refetch so UI and audio get fresh translations
+      await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
 
       if (!silent) setIsTranslating(false);
 
-      // Step 2: Generate audio (after translations are available)
+      // Step 3: Generate audio (translations are now in DB and in local cache)
       generateBothBatch(lang1, lang2, sentenceOrder, v1, v2, forceRegenerate, silent);
     } finally {
-      translationInProgressRef.current = false;
       if (!silent) setIsTranslating(false);
     }
-  }, [bookId, translateRange, generateBothBatch, queryClient, isTranslated]);
+  }, [bookId, translateRange, generateBothBatch, queryClient]);
 
   // Auto-generate first batch when player opens or voice/language changes
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || isGenerating || sentences.length === 0) return;
+    // Wait for saved progress to load before triggering initial batch
+    if (!progressFetched) return;
 
     const lang1 = settings.language1;
     const lang2 = settings.language2;
@@ -204,7 +200,6 @@ export default function Player() {
   // Prefetch translations when approaching end of translated range (5 sentences before)
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
-    if (translationInProgressRef.current) return;
 
     const currentOrder = getSentenceOrder(currentIndex);
     const maxOrder = sentences[sentences.length - 1]?.sentenceOrder || 0;
