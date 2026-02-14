@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Globe, Bell, HelpCircle, LogOut, ChevronLeft, Save } from 'lucide-react';
+import { User, Globe, Bell, HelpCircle, LogOut, ChevronLeft, Save, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -98,7 +98,8 @@ export default function SettingsPage() {
   );
 }
 
-function AccountSection({ onBack, user }: { onBack: () => void; user: ReturnType<typeof useAuth>['user'] }) {
+function AccountSection({ onBack, user }: { onBack: () => void; user: ReturnType<typeof useAuth>['user']; }) {
+  const { updatePassword } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -122,8 +123,7 @@ function AccountSection({ onBack, user }: { onBack: () => void; user: ReturnType
     setSaving(true);
     const { error } = await supabase
       .from('profiles')
-      .update({ display_name: displayName.trim() || null })
-      .eq('id', user.id);
+      .upsert({ id: user.id, display_name: displayName.trim() || null });
     setSaving(false);
     if (error) {
       toast.error('Failed to save profile');
@@ -163,6 +163,8 @@ function AccountSection({ onBack, user }: { onBack: () => void; user: ReturnType
         </Button>
       </div>
 
+      <ChangePasswordSection />
+
       <div className="rounded-2xl bg-card border border-border p-6">
         <p className="text-xs text-muted-foreground">Member since</p>
         <p className="text-sm font-medium mt-1">
@@ -170,5 +172,67 @@ function AccountSection({ onBack, user }: { onBack: () => void; user: ReturnType
         </p>
       </div>
     </>
+  );
+}
+
+function ChangePasswordSection() {
+  const { updatePassword } = useAuth();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    setSaving(true);
+    const { error } = await updatePassword(newPassword);
+    setSaving(false);
+    if (error) {
+      toast.error('Failed to update password');
+    } else {
+      toast.success('Password updated');
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl bg-card border border-border p-6">
+      <div className="flex items-center gap-2">
+        <Lock className="h-4 w-4 text-muted-foreground" />
+        <p className="text-sm font-medium">Change Password</p>
+      </div>
+
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">New Password</label>
+        <Input
+          type="password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="Min 6 characters"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Confirm Password</label>
+        <Input
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="Repeat password"
+        />
+      </div>
+
+      <Button onClick={handleChangePassword} disabled={saving || !newPassword} variant="outline" className="gap-2">
+        <Lock className="h-4 w-4" />
+        {saving ? 'Updating…' : 'Update Password'}
+      </Button>
+    </div>
   );
 }
