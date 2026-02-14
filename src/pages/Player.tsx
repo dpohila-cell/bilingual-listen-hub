@@ -87,6 +87,7 @@ export default function Player() {
     togglePlay,
     goToNext,
     goToPrev,
+    goTo,
     text1,
     text2,
     totalSentences,
@@ -156,12 +157,26 @@ export default function Player() {
         </button>
       </div>
 
-      <div className="h-1 rounded-full bg-muted overflow-hidden">
-        <motion.div
-          className="h-full bg-primary rounded-full"
-          animate={{ width: `${progressPercent}%` }}
-          transition={{ duration: 0.3 }}
+      <div className="flex flex-col gap-1">
+        <input
+          type="range"
+          min={0}
+          max={Math.max(totalSentences - 1, 0)}
+          value={currentIndex}
+          onChange={(e) => goTo(Number(e.target.value))}
+          className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
+            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md
+            [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full
+            [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+          style={{
+            background: `linear-gradient(to right, hsl(var(--primary)) ${progressPercent}%, hsl(var(--muted)) ${progressPercent}%)`,
+          }}
         />
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>{currentIndex + 1}</span>
+          <span>{totalSentences}</span>
+        </div>
       </div>
 
       <AnimatePresence>

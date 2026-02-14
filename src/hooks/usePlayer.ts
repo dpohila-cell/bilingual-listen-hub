@@ -259,6 +259,17 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     }
   }, [stopCurrent, currentIndex, isPlaying, playSentence]);
 
+  const goTo = useCallback((index: number) => {
+    const clamped = Math.max(0, Math.min(index, sentences.length - 1));
+    stopCurrent();
+    setActiveLang(null);
+    setCurrentIndex(clamped);
+    if (isPlaying) {
+      abortRef.current = false;
+      playSentence(clamped);
+    }
+  }, [stopCurrent, sentences.length, isPlaying, playSentence]);
+
   useEffect(() => {
     return () => {
       abortRef.current = true;
@@ -282,6 +293,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     togglePlay,
     goToNext,
     goToPrev,
+    goTo,
     text1: currentSentence ? getSentenceText(currentSentence, settings.language1) : '',
     text2: currentSentence ? getSentenceText(currentSentence, settings.language2) : '',
     totalSentences: sentences.length,
