@@ -4,7 +4,8 @@ import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
-import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
+import { useGenerateAudio } from '@/hooks/useGenerateAudio';
+import { Settings2, ChevronDown, BookOpen, Loader2, Volume2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,6 +16,7 @@ export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuth();
+  const { isGenerating, progress: genProgress, error: genError, generateBoth } = useGenerateAudio(bookId);
 
   const { data: book, isLoading: bookLoading } = useQuery({
     queryKey: ['book', bookId],
@@ -174,6 +176,26 @@ export default function Player() {
           sentenceNumber={currentIndex + 1}
           totalSentences={totalSentences}
         />
+
+        {/* Generate Audio Button */}
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <button
+            onClick={() => generateBoth(settings.language1, settings.language2)}
+            disabled={isGenerating}
+            className="flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+          >
+            {isGenerating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Volume2 className="h-4 w-4" />
+            )}
+            {isGenerating ? genProgress : 'Сгенерировать аудио'}
+          </button>
+          {genError && <p className="text-xs text-destructive">{genError}</p>}
+          {genProgress && !isGenerating && !genError && (
+            <p className="text-xs text-muted-foreground">{genProgress}</p>
+          )}
+        </div>
       </div>
 
       {playerLoading && (

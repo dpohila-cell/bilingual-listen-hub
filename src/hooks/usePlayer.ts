@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PlaybackSettings, Language, Sentence } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
 
 function getSentenceText(sentence: Sentence, lang: Language): string {
   const map: Record<Language, string> = {
@@ -8,73 +9,6 @@ function getSentenceText(sentence: Sentence, lang: Language): string {
     sv: sentence.svTranslation,
   };
   return map[lang] || sentence.originalText;
-}
-
-const LANG_TO_BCP47: Record<Language, string> = {
-  en: 'en-US',
-  ru: 'ru-RU',
-  sv: 'sv-SE',
-};
-
-// Split long text into chunks to avoid browser speechSynthesis length limits
-function splitTextIntoChunks(text: string, maxLength = 150): string[] {
-  if (text.length <= maxLength) return [text];
-  
-  const chunks: string[] = [];
-  let remaining = text;
-  
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLength) {
-      chunks.push(remaining);
-      break;
-    }
-    
-    // Try to split at sentence-ending punctuation
-    let splitIndex = -1;
-    for (let i = maxLength; i >= maxLength / 2; i--) {
-      if (/[.!?;,:]/.test(remaining[i])) {
-        splitIndex = i + 1;
-        break;
-      }
-    }
-    // Fallback: split at last space
-    if (splitIndex === -1) {
-      splitIndex = remaining.lastIndexOf(' ', maxLength);
-    }
-    if (splitIndex <= 0) {
-      splitIndex = maxLength;
-    }
-    
-    chunks.push(remaining.slice(0, splitIndex).trim());
-    remaining = remaining.slice(splitIndex).trim();
-  }
-  
-  return chunks;
-}
-
-function speakChunk(text: string, language: Language, speed: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = LANG_TO_BCP47[language] || 'en-US';
-    utterance.rate = speed;
-
-    const voices = speechSynthesis.getVoices();
-    const langPrefix = language;
-    const match = voices.find(v => v.lang.startsWith(langPrefix)) ||
-                  voices.find(v => v.lang.startsWith(LANG_TO_BCP47[language]));
-    if (match) utterance.voice = match;
-
-    utterance.onend = () => resolve();
-    utterance.onerror = (e) => reject(e);
-    speechSynthesis.speak(utterance);
-  });
-}
-
-async function speakText(text: string, language: Language, speed: number): Promise<void> {
-  const chunks = splitTextIntoChunks(text);
-  for (const chunk of chunks) {
-    await speakChunk(chunk, language, speed);
-  }
 }
 
 function getDefaultSettings(originalLanguage: Language): PlaybackSettings {
@@ -108,6 +42,52 @@ function saveBookSettings(bookId: string, settings: PlaybackSettings) {
   } catch {}
 }
 
+function getAudioUrl(bookId: string, language: Language, sentenceOrder: number): string {
+  const { data } = supabase.storage
+    .from('audio')
+    .getPublicUrl(`${bookId}/${language}/${String(sentenceOrder).padStart(5, '0')}.mp3`);
+  return data.publicUrl;
+}
+
+// Prefetch and cache audio elements
+const audioCache = new Map<string, HTMLAudioElement>();
+
+function prefetchAudio(bookId: string, language: Language, sentenceOrder: number): HTMLAudioElement {
+  const key = `${bookId}/${language}/${sentenceOrder}`;
+  if (audioCache.has(key)) return audioCache.get(key)!;
+
+  const url = getAudioUrl(bookId, language, sentenceOrder);
+  const audio = new Audio();
+  audio.preload = 'auto';
+  audio.src = url;
+  audioCache.set(key, audio);
+  return audio;
+}
+
+function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    audio.playbackRate = speed;
+    audio.currentTime = 0;
+
+    const onEnded = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (e: Event) => {
+      cleanup();
+      reject(new Error(`Audio playback error: ${(e as ErrorEvent).message || 'unknown'}`));
+    };
+    const cleanup = () => {
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('error', onError);
+    };
+
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
+    audio.play().catch(reject);
+  });
+}
+
 export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?: string, originalLanguage?: Language) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
 
@@ -138,10 +118,15 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   }, [bookId]);
 
   const abortRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const stopCurrent = useCallback(() => {
     abortRef.current = true;
-    speechSynthesis.cancel();
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
   }, []);
 
   const wait = useCallback((ms: number) => {
@@ -157,9 +142,21 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     });
   }, []);
 
+  // Prefetch upcoming sentences
+  useEffect(() => {
+    if (!bookId || sentences.length === 0) return;
+    const { language1, language2 } = settings;
+    // Prefetch current + next 3 sentences for both languages
+    for (let i = currentIndex; i < Math.min(currentIndex + 4, sentences.length); i++) {
+      const order = sentences[i].sentenceOrder;
+      prefetchAudio(bookId, language1, order);
+      prefetchAudio(bookId, language2, order);
+    }
+  }, [currentIndex, bookId, sentences, settings.language1, settings.language2]);
+
   const playSentence = useCallback(
     async (index: number) => {
-      if (abortRef.current || index >= sentences.length) {
+      if (abortRef.current || index >= sentences.length || !bookId) {
         setIsPlaying(false);
         setActiveLang(null);
         setIsLoading(false);
@@ -174,14 +171,13 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const activeLang1: 1 | 2 = settings.playbackOrder === '1-2' ? 1 : 2;
       const activeLang2: 1 | 2 = settings.playbackOrder === '1-2' ? 2 : 1;
 
-      const text1 = getSentenceText(sentence, lang1);
-      const text2 = getSentenceText(sentence, lang2);
-
       try {
         // Play language 1
         setActiveLang(activeLang1);
         setIsLoading(false);
-        await speakText(text1, lang1, settings.playbackSpeed);
+        const audio1 = prefetchAudio(bookId, lang1, sentence.sentenceOrder);
+        currentAudioRef.current = audio1;
+        await playAudioElement(audio1, settings.playbackSpeed);
         if (abortRef.current) return;
 
         // Pause between languages
@@ -191,7 +187,9 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
 
         // Play language 2
         setActiveLang(activeLang2);
-        await speakText(text2, lang2, settings.playbackSpeed);
+        const audio2 = prefetchAudio(bookId, lang2, sentence.sentenceOrder);
+        currentAudioRef.current = audio2;
+        await playAudioElement(audio2, settings.playbackSpeed);
         if (abortRef.current) return;
 
         // Pause before next sentence
@@ -208,7 +206,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         setIsLoading(false);
       }
     },
-    [sentences, settings, wait]
+    [sentences, settings, wait, bookId]
   );
 
   const play = useCallback(() => {
@@ -254,7 +252,10 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   useEffect(() => {
     return () => {
       abortRef.current = true;
-      speechSynthesis.cancel();
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
     };
   }, []);
 
