@@ -94,13 +94,15 @@ serve(async (req) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: book, error: bookError } = await adminClient
-      .from("books").select("id, user_id").eq("id", bookId).single();
+      .from("books").select("id, user_id, original_language").eq("id", bookId).single();
 
     if (bookError || !book || book.user_id !== user.id) {
       return new Response(JSON.stringify({ error: "Book not found or not owned" }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const bookOriginalLang = book.original_language || "en";
 
     const { data: sentences, error: sentError } = await adminClient
       .from("sentences")
@@ -137,7 +139,12 @@ serve(async (req) => {
 
     const toGenerate = sentences.filter((s) => {
       const fileName = `${String(s.sentence_order).padStart(5, "0")}.mp3`;
-      return !existingSet.has(fileName);
+      if (existingSet.has(fileName)) return false;
+      // If generating audio for the book's original language, original_text is fine
+      if (language === bookOriginalLang) return true;
+      // For other languages, skip if translation is not yet available
+      const translationField = language === "en" ? s.en_translation : language === "sv" ? s.sv_translation : language === "ru" ? s.ru_translation : null;
+      return translationField != null && translationField.trim().length > 0;
     });
 
     if (toGenerate.length === 0) {
