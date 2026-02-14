@@ -98,12 +98,14 @@ export default function Player() {
 
     const lang1 = settings.language1;
     const lang2 = settings.language2;
-    const voiceKey = `${bookId}-${voiceSettings.version}`;
+    const v1 = getVoice(lang1);
+    const v2 = getVoice(lang2);
+    const voiceKey = `${bookId}-${lang1}-${lang2}-${v1}-${v2}`;
     if (audioTriggeredRef.current === voiceKey) return;
 
     audioTriggeredRef.current = voiceKey;
-    generateBoth(lang1, lang2, getVoice(lang1), getVoice(lang2));
-  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version]);
+    generateBoth(lang1, lang2, v1, v2);
+  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBoth, getVoice]);
 
   // Save progress on index change
   useEffect(() => {
