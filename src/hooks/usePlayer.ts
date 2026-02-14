@@ -8,7 +8,8 @@ function getSentenceText(sentence: Sentence, lang: Language): string {
     ru: sentence.ruTranslation,
     sv: sentence.svTranslation,
   };
-  return map[lang] || sentence.originalText;
+  const text = map[lang];
+  return text || sentence.originalText;
 }
 
 function getDefaultSettings(originalLanguage: Language): PlaybackSettings {
@@ -100,10 +101,16 @@ function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<void>
 
 export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?: string, originalLanguage?: Language) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
+  const initialAppliedRef = useRef(false);
 
   useEffect(() => {
+    // Only apply initialIndex once (on first load), not on subsequent refetches
+    if (initialAppliedRef.current) return;
     if (initialIndex != null && initialIndex > 0 && sentences.length > 0) {
       setCurrentIndex(Math.min(initialIndex, sentences.length - 1));
+      initialAppliedRef.current = true;
+    } else if (sentences.length > 0) {
+      initialAppliedRef.current = true;
     }
   }, [initialIndex, sentences.length]);
 
