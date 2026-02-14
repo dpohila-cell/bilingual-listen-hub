@@ -1,11 +1,12 @@
 import { Book, LANGUAGE_FLAGS, LANGUAGE_LABELS, UserProgress } from '@/types';
-import { BookOpen, Headphones } from 'lucide-react';
+import { BookOpen, Headphones, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface BookCardProps {
   book: Book;
   progress?: UserProgress;
   onClick: (bookId: string) => void;
+  onDelete?: (bookId: string) => void;
 }
 
 const COVER_COLORS = [
@@ -14,7 +15,7 @@ const COVER_COLORS = [
   'from-success/80 to-success',
 ];
 
-export function BookCard({ book, progress, onClick }: BookCardProps) {
+export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
   const progressPercent = progress
     ? Math.round((progress.completedSentences / progress.totalSentences) * 100)
     : 0;
@@ -55,8 +56,20 @@ export function BookCard({ book, progress, onClick }: BookCardProps) {
           </div>
         )}
       </div>
-      <div className="flex flex-shrink-0 items-center">
+      <div className="flex flex-shrink-0 flex-col items-center gap-2">
         <Headphones className="h-4 w-4 text-muted-foreground" />
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(book.id);
+            }}
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            aria-label="Delete book"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </motion.button>
   );
