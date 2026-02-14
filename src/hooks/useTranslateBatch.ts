@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const TRANSLATE_BATCH_SIZE = 25;
 
@@ -35,10 +36,24 @@ export function useTranslateBatch(bookId: string | undefined) {
         }
       );
 
+      if (!response.ok) {
+        const result = await response.json();
+        if (response.status === 402) {
+          toast.error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.');
+        } else if (response.status === 429) {
+          toast.error('Too many requests. Please wait a moment and try again.');
+        } else {
+          console.error('Translate error:', result);
+        }
+        // Allow retry by removing from dedup set
+        requestedRangesRef.current.delete(startOrder);
+        return false;
+      }
       const result = await response.json();
-      return response.ok && (result.translated > 0 || result.message === 'Already translated');
+      return result.translated > 0 || result.message === 'Already translated';
     } catch (err) {
       console.error('Translate batch error:', err);
+      requestedRangesRef.current.delete(startOrder);
       return false;
     }
   }, [bookId]);
