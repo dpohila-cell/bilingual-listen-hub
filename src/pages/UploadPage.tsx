@@ -70,17 +70,39 @@ export default function UploadPage() {
       setNewBookId(book.id);
       setCurrentProcess(2);
 
-      // 3. Call process-book edge function
+      // 3. Call process-book edge function (may timeout for large books, but batches are saved incrementally)
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await supabase.functions.invoke('process-book', {
-        body: { bookId: book.id, filePath },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
+      try {
+        const response = await supabase.functions.invoke('process-book', {
+          body: { bookId: book.id, filePath },
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
 
-      if (response.error) throw new Error(response.error.message);
+        if (response.error) {
+          console.warn('Edge function returned error, checking if partial progress was saved...');
+        }
+      } catch (fnErr) {
+        console.warn('Edge function call failed (possibly timeout), checking book status...', fnErr);
+      }
 
-      setCurrentProcess(3);
-      setTimeout(() => setStep('done'), 600);
+      // Check if book was processed (fully or partially)
+      const { data: updatedBook } = await supabase
+        .from('books')
+        .select('status, sentence_count')
+        .eq('id', book.id)
+        .maybeSingle();
+
+      if (updatedBook && updatedBook.sentence_count > 0) {
+        // If still processing but has sentences, mark as ready
+        if (updatedBook.status === 'processing') {
+          await supabase.from('books').update({ status: 'ready' }).eq('id', book.id);
+        }
+        setCurrentProcess(3);
+        setTimeout(() => setStep('done'), 600);
+      } else {
+        toast.error('Failed to process book. Please try again.');
+        setStep('select');
+      }
     } catch (err: unknown) {
       console.error('Upload error:', err);
       toast.error('Failed to process book. Please try again.');
