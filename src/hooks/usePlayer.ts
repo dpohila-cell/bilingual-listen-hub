@@ -33,7 +33,39 @@ function speakText(text: string, language: Language, speed: number): Promise<voi
   });
 }
 
-export function usePlayer(sentences: Sentence[], initialIndex?: number) {
+function getDefaultSettings(originalLanguage: Language): PlaybackSettings {
+  const lang1 = originalLanguage;
+  const lang2: Language = originalLanguage === 'en' ? 'ru' : 'en';
+  return {
+    language1: lang1,
+    language2: lang2,
+    playbackOrder: '1-2',
+    playbackSpeed: 1,
+    pauseDuration: 2,
+  };
+}
+
+function loadBookSettings(bookId: string, originalLanguage: Language): PlaybackSettings {
+  try {
+    const stored = localStorage.getItem(`player-settings-${bookId}`);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Validate stored settings
+      if (parsed.language1 && parsed.language2 && parsed.language1 !== parsed.language2) {
+        return { ...getDefaultSettings(originalLanguage), ...parsed };
+      }
+    }
+  } catch {}
+  return getDefaultSettings(originalLanguage);
+}
+
+function saveBookSettings(bookId: string, settings: PlaybackSettings) {
+  try {
+    localStorage.setItem(`player-settings-${bookId}`, JSON.stringify(settings));
+  } catch {}
+}
+
+export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?: string, originalLanguage?: Language) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
 
   // Update index when initialIndex loads
@@ -45,13 +77,23 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeLang, setActiveLang] = useState<1 | 2 | null>(null);
-  const [settings, setSettings] = useState<PlaybackSettings>({
-    language1: 'en',
-    language2: 'ru',
-    playbackOrder: '1-2',
-    playbackSpeed: 1,
-    pauseDuration: 2,
-  });
+  const [settings, _setSettings] = useState<PlaybackSettings>(() =>
+    getDefaultSettings(originalLanguage || 'en')
+  );
+
+  // Load saved settings when bookId becomes available
+  useEffect(() => {
+    if (bookId && originalLanguage) {
+      _setSettings(loadBookSettings(bookId, originalLanguage));
+    }
+  }, [bookId, originalLanguage]);
+
+  const setSettings = useCallback((newSettings: PlaybackSettings) => {
+    _setSettings(newSettings);
+    if (bookId) {
+      saveBookSettings(bookId, newSettings);
+    }
+  }, [bookId]);
 
   const abortRef = useRef(false);
 

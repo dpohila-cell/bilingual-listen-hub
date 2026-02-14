@@ -1,4 +1,4 @@
-import { Language, LANGUAGE_FLAGS } from '@/types';
+import { Language, LANGUAGE_FLAGS, LANGUAGE_LABELS } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface SentenceDisplayProps {
@@ -42,7 +42,7 @@ export function SentenceDisplay({
           <div className="mb-2 flex items-center gap-1.5">
             <span className="text-sm">{LANGUAGE_FLAGS[lang1]}</span>
             <span className="text-xs font-medium text-muted-foreground uppercase">
-              Language 1
+              {LANGUAGE_LABELS[lang1]}
             </span>
             {activeLang === 1 && (
               <motion.span
@@ -73,7 +73,7 @@ export function SentenceDisplay({
           <div className="mb-2 flex items-center gap-1.5">
             <span className="text-sm">{LANGUAGE_FLAGS[lang2]}</span>
             <span className="text-xs font-medium text-muted-foreground uppercase">
-              Language 2
+              {LANGUAGE_LABELS[lang2]}
             </span>
             {activeLang === 2 && (
               <motion.span

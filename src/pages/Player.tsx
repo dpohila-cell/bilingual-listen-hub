@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Sentence } from '@/types';
+import type { Sentence, Language } from '@/types';
 
 export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -85,7 +85,7 @@ export default function Player() {
     text1,
     text2,
     totalSentences,
-  } = usePlayer(sentences, savedProgress);
+  } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
 
   // Save progress on index change
   useEffect(() => {
