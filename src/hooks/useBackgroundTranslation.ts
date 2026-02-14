@@ -15,39 +15,48 @@ export function useBackgroundTranslation(bookId: string | undefined, bookReady: 
     abortRef.current = false;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
       let hasMore = true;
       while (hasMore && !abortRef.current) {
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/translate-all`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-              'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            },
-            body: JSON.stringify({ bookId }),
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) break;
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/translate-all`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              },
+              body: JSON.stringify({ bookId }),
+              signal: controller.signal,
+            }
+          );
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            console.error('Background translation error:', response.status);
+            break;
           }
-        );
 
-        if (!response.ok) {
-          console.error('Background translation error:', response.status);
-          break;
-        }
+          const result = await response.json();
+          console.log(`Background translation: ${result.translated} done, hasMore: ${result.hasMore}`);
+          hasMore = result.hasMore ?? false;
 
-        const result = await response.json();
-        console.log(`Background translation: ${result.translated} done, hasMore: ${result.hasMore}`);
-        hasMore = result.hasMore ?? false;
-
-        if (result.retryAfter) {
-          await new Promise((r) => setTimeout(r, result.retryAfter * 1000));
+          if (result.retryAfter) {
+            await new Promise((r) => setTimeout(r, result.retryAfter * 1000));
+          }
+        } catch (fetchErr) {
+          if (abortRef.current) break;
+          console.warn('Background translation fetch error, retrying in 5s...', fetchErr);
+          await new Promise((r) => setTimeout(r, 5000));
         }
       }
-    } catch (err) {
-      console.error('Background translation error:', err);
     } finally {
       runningRef.current = false;
     }
