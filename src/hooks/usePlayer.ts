@@ -75,18 +75,20 @@ function prefetchAudio(bookId: string, language: Language, sentenceOrder: number
   return audio;
 }
 
-function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<void> {
-  return new Promise((resolve, reject) => {
+function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<'played' | 'skipped'> {
+  return new Promise((resolve) => {
     audio.playbackRate = speed;
     audio.currentTime = 0;
 
     const onEnded = () => {
       cleanup();
-      resolve();
+      resolve('played');
     };
-    const onError = (e: Event) => {
+    const onError = () => {
       cleanup();
-      reject(new Error(`Audio playback error: ${(e as ErrorEvent).message || 'unknown'}`));
+      // Audio file doesn't exist or can't be played — skip gracefully
+      console.warn('Audio not available, skipping');
+      resolve('skipped');
     };
     const cleanup = () => {
       audio.removeEventListener('ended', onEnded);
@@ -95,7 +97,7 @@ function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<void>
 
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
-    audio.play().catch(reject);
+    audio.play().catch(() => resolve('skipped'));
   });
 }
 
