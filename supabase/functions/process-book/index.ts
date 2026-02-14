@@ -208,6 +208,29 @@ Deno.serve(async (req) => {
       .update({ status: "ready", sentence_count: sentences.length })
       .eq("id", bookId);
 
+    // Fire-and-forget: translate ALL remaining sentences in the background
+    if (sentences.length > 25) {
+      console.log(`Triggering background translation for remaining ${sentences.length - 25} sentences`);
+      try {
+        const bgResponse = await fetch(
+          `${supabaseUrl}/functions/v1/translate-all`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: authHeader,
+              "Content-Type": "application/json",
+              "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
+            },
+            body: JSON.stringify({ bookId }),
+          }
+        );
+        console.log(`translate-all triggered, status: ${bgResponse.status}`);
+      } catch (bgErr) {
+        console.error("Failed to trigger background translation:", bgErr);
+        // Non-fatal: player can still trigger on-demand translation as fallback
+      }
+    }
+
     return new Response(
       JSON.stringify({ success: true, sentenceCount: sentences.length, translated: firstBatch.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
