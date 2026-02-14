@@ -7,145 +7,47 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-const WSS_URL = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}`;
-
-const VOICE_MAP: Record<string, string> = {
-  en: "en-US-GuyNeural",
-  ru: "ru-RU-DmitryNeural",
-  sv: "sv-SE-MattiasNeural",
+const VOICE_MAP: Record<string, { languageCode: string; name: string }> = {
+  en: { languageCode: "en-US", name: "en-US-Wavenet-D" },
+  ru: { languageCode: "ru-RU", name: "ru-RU-Wavenet-B" },
+  sv: { languageCode: "sv-SE", name: "sv-SE-Wavenet-A" },
 };
 
-function generateRequestId(): string {
-  return crypto.randomUUID().replace(/-/g, "");
-}
+async function synthesize(text: string, language: string, apiKey: string): Promise<Uint8Array> {
+  const voiceConfig = VOICE_MAP[language] || VOICE_MAP["en"];
 
-function dateToString(): string {
-  const d = new Date();
-  return d.toUTCString();
-}
+  const response = await fetch(
+    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: { text },
+        voice: {
+          languageCode: voiceConfig.languageCode,
+          name: voiceConfig.name,
+        },
+        audioConfig: {
+          audioEncoding: "MP3",
+          sampleRateHertz: 24000,
+        },
+      }),
+    }
+  );
 
-function buildSSML(text: string, voice: string, rate = "+0%", volume = "+0%", pitch = "+0Hz"): string {
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-
-  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
-    `<voice name='${voice}'>` +
-    `<prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
-    `${escaped}` +
-    `</prosody></voice></speak>`;
-}
-
-async function synthesize(text: string, voice: string): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const requestId = generateRequestId();
-    const ws = new WebSocket(WSS_URL);
-    const audioChunks: Uint8Array[] = [];
-    let audioStarted = false;
-
-    const timeout = setTimeout(() => {
-      ws.close();
-      reject(new Error("TTS timeout after 30s"));
-    }, 30000);
-
-    ws.onopen = () => {
-      // Send config message
-      const configMsg =
-        `X-Timestamp:${dateToString()}\r\n` +
-        `Content-Type:application/json; charset=utf-8\r\n` +
-        `Path:speech.config\r\n\r\n` +
-        JSON.stringify({
-          context: {
-            synthesis: {
-              audio: {
-                metadataoptions: { sentenceBoundaryEnabled: "false", wordBoundaryEnabled: "false" },
-                outputFormat: "audio-24khz-48kbitrate-mono-mp3",
-              },
-            },
-          },
-        });
-      ws.send(configMsg);
-
-      // Send SSML request
-      const ssml = buildSSML(text, voice);
-      const ssmlMsg =
-        `X-RequestId:${requestId}\r\n` +
-        `Content-Type:application/ssml+xml\r\n` +
-        `X-Timestamp:${dateToString()}\r\n` +
-        `Path:ssml\r\n\r\n` +
-        ssml;
-      ws.send(ssmlMsg);
-    };
-
-    ws.onmessage = (event) => {
-      if (typeof event.data === "string") {
-        if (event.data.includes("Path:turn.end")) {
-          clearTimeout(timeout);
-          ws.close();
-          // Concatenate audio chunks
-          const totalLen = audioChunks.reduce((acc, c) => acc + c.length, 0);
-          const result = new Uint8Array(totalLen);
-          let offset = 0;
-          for (const chunk of audioChunks) {
-            result.set(chunk, offset);
-            offset += chunk.length;
-          }
-          resolve(result);
-        }
-      } else if (event.data instanceof ArrayBuffer) {
-        // Binary message: audio data
-        const view = new Uint8Array(event.data);
-        // Find the separator between header and audio data
-        // Header ends with \r\n\r\n in binary
-        const headerEnd = findHeaderEnd(view);
-        if (headerEnd >= 0) {
-          audioChunks.push(view.slice(headerEnd));
-          audioStarted = true;
-        } else if (audioStarted) {
-          audioChunks.push(view);
-        }
-      } else if (event.data instanceof Blob) {
-        // Handle Blob data
-        event.data.arrayBuffer().then((ab: ArrayBuffer) => {
-          const view = new Uint8Array(ab);
-          const headerEnd = findHeaderEnd(view);
-          if (headerEnd >= 0) {
-            audioChunks.push(view.slice(headerEnd));
-            audioStarted = true;
-          } else if (audioStarted) {
-            audioChunks.push(view);
-          }
-        });
-      }
-    };
-
-    ws.onerror = (err) => {
-      clearTimeout(timeout);
-      reject(new Error(`WebSocket error: ${err}`));
-    };
-
-    ws.onclose = (event) => {
-      clearTimeout(timeout);
-      if (audioChunks.length === 0) {
-        reject(new Error(`WebSocket closed without audio. Code: ${event.code}`));
-      }
-    };
-  });
-}
-
-function findHeaderEnd(data: Uint8Array): number {
-  // Look for the pattern: 0x00 0x00 after the 2-byte header length
-  // Edge TTS binary messages start with a 2-byte big-endian header length
-  if (data.length < 2) return -1;
-  const headerLen = (data[0] << 8) | data[1];
-  if (data.length > headerLen + 2) {
-    return headerLen + 2;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google TTS error ${response.status}: ${errorText}`);
   }
-  return -1;
+
+  const result = await response.json();
+  // Google returns base64-encoded audio
+  const binaryString = atob(result.audioContent);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 serve(async (req) => {
@@ -158,6 +60,14 @@ serve(async (req) => {
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
         status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const GOOGLE_TTS_API_KEY = Deno.env.get("GOOGLE_TTS_API_KEY");
+    if (!GOOGLE_TTS_API_KEY) {
+      return new Response(JSON.stringify({ error: "Google TTS API key not configured" }), {
+        status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -215,7 +125,6 @@ serve(async (req) => {
       });
     }
 
-    const voice = VOICE_MAP[language] || VOICE_MAP["en"];
     const storagePath = `${bookId}/${language}`;
 
     // Check existing files
@@ -239,8 +148,8 @@ serve(async (req) => {
       );
     }
 
-    // Process in batches of 3 (conservative for WebSocket connections)
-    const BATCH_SIZE = 3;
+    // Process in batches of 5
+    const BATCH_SIZE = 5;
     let generated = 0;
     const errors: string[] = [];
 
@@ -257,7 +166,7 @@ serve(async (req) => {
 
           if (!text || text.trim().length === 0) return;
 
-          const audioData = await synthesize(text, voice);
+          const audioData = await synthesize(text, language, GOOGLE_TTS_API_KEY);
 
           const fileName = `${String(sentence.sentence_order).padStart(5, "0")}.mp3`;
           const filePath = `${storagePath}/${fileName}`;
