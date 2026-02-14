@@ -3,38 +3,86 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
-type UploadStep = 'select' | 'processing' | 'done';
+type UploadStep = 'select' | 'details' | 'processing' | 'done';
 
 const PROCESSING_STEPS = [
-  'Extracting text from file…',
-  'Detecting chapters…',
-  'Splitting into sentences…',
+  'Uploading file…',
+  'Extracting text…',
   'Generating translations…',
-  'Creating audio files…',
+  'Saving sentences…',
 ];
 
 export default function UploadPage() {
   const [step, setStep] = useState<UploadStep>('select');
   const [currentProcess, setCurrentProcess] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [title, setTitle] = useState('');
+  const [author, setAuthor] = useState('');
+  const [newBookId, setNewBookId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleFileSelect = (_file: File) => {
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    setTitle(file.name.replace(/\.[^/.]+$/, ''));
+    setStep('details');
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !user) return;
+
     setStep('processing');
     setCurrentProcess(0);
 
-    // Simulate processing steps
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      if (i >= PROCESSING_STEPS.length) {
-        clearInterval(interval);
-        setStep('done');
-      } else {
-        setCurrentProcess(i);
-      }
-    }, 1200);
+    try {
+      // 1. Upload file to storage
+      const filePath = `${user.id}/${Date.now()}-${selectedFile.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('ebooks')
+        .upload(filePath, selectedFile);
+      if (uploadError) throw uploadError;
+
+      setCurrentProcess(1);
+
+      // 2. Create book record
+      const { data: book, error: bookError } = await supabase
+        .from('books')
+        .insert({
+          user_id: user.id,
+          title: title || 'Untitled',
+          author: author || '',
+          file_path: filePath,
+          status: 'processing',
+        })
+        .select('id')
+        .single();
+      if (bookError || !book) throw bookError;
+
+      setNewBookId(book.id);
+      setCurrentProcess(2);
+
+      // 3. Call process-book edge function
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await supabase.functions.invoke('process-book', {
+        body: { bookId: book.id, filePath },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+
+      setCurrentProcess(3);
+      setTimeout(() => setStep('done'), 600);
+    } catch (err: unknown) {
+      console.error('Upload error:', err);
+      toast.error('Failed to process book. Please try again.');
+      setStep('select');
+    }
   };
 
   return (
@@ -48,13 +96,41 @@ export default function UploadPage() {
 
       <AnimatePresence mode="wait">
         {step === 'select' && (
-          <motion.div
-            key="select"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <motion.div key="select" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <UploadZone onFileSelect={handleFileSelect} />
+          </motion.div>
+        )}
+
+        {step === 'details' && (
+          <motion.div
+            key="details"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col gap-4 rounded-2xl bg-card border border-border p-6"
+          >
+            <h2 className="font-serif text-lg">Book Details</h2>
+            <Input
+              placeholder="Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <Input
+              placeholder="Author (optional)"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              File: {selectedFile?.name} ({((selectedFile?.size || 0) / 1024 / 1024).toFixed(1)} MB)
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => { setStep('select'); setSelectedFile(null); }}>
+                Back
+              </Button>
+              <Button className="flex-1" onClick={handleUpload}>
+                Start Processing
+              </Button>
+            </div>
           </motion.div>
         )}
 
@@ -113,15 +189,13 @@ export default function UploadPage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => {
-                  setStep('select');
-                }}
+                onClick={() => { setStep('select'); setSelectedFile(null); }}
               >
                 Upload Another
               </Button>
               <Button
                 className="flex-1"
-                onClick={() => navigate('/player')}
+                onClick={() => navigate(newBookId ? `/player/${newBookId}` : '/')}
               >
                 Start Listening
               </Button>
