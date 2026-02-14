@@ -11,6 +11,7 @@ interface GenerateAudioState {
 }
 
 const VOICE_CACHE_KEY = 'audio-voice-cache';
+const BATCH_SIZE = 10;
 
 function getVoiceCache(): Record<string, string> {
   try {
@@ -29,12 +30,10 @@ function shouldForceRegenerate(bookId: string, lang: string, voice: string | und
   const cache = getVoiceCache();
   const cacheKey = `${bookId}/${lang}`;
   const cachedVoice = cache[cacheKey];
-  // If no cache entry, check if voice differs from the default
   if (!cachedVoice) {
     const defaultVoice = VOICE_OPTIONS[lang as Language]?.[0]?.id;
     return voice !== defaultVoice;
   }
-  // If cached, force only when different
   return cachedVoice !== voice;
 }
 
@@ -45,15 +44,38 @@ export function useGenerateAudio(bookId: string | undefined) {
     error: null,
   });
 
-  const generate = useCallback(async (language: Language, voice?: string) => {
+  // Track which sentence ranges have been generated per language to avoid duplicate calls
+  const generatedRangesRef = useRef<Record<string, Set<number>>>({});
+
+  const resetRanges = useCallback(() => {
+    generatedRangesRef.current = {};
+  }, []);
+
+  const generateBatch = useCallback(async (
+    language: Language,
+    startOrder: number,
+    voice?: string,
+    forceRegenerate?: boolean,
+    silent?: boolean, // don't show progress UI for background prefetch
+  ) => {
     if (!bookId) return;
-    setState({ isGenerating: true, progress: `Generating audio (${language})…`, error: null });
+
+    // Check if this range was already generated (unless forcing)
+    const langKey = `${language}-${voice || 'default'}`;
+    if (!forceRegenerate) {
+      const ranges = generatedRangesRef.current[langKey] || new Set<number>();
+      if (ranges.has(startOrder)) return;
+      ranges.add(startOrder);
+      generatedRangesRef.current[langKey] = ranges;
+    }
+
+    if (!silent) {
+      setState(s => ({ ...s, isGenerating: true, progress: `Generating audio (${language})…`, error: null }));
+    }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-
-      const forceRegenerate = shouldForceRegenerate(bookId, language, voice);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-audio`,
@@ -64,69 +86,65 @@ export function useGenerateAudio(bookId: string | undefined) {
             'Authorization': `Bearer ${session.access_token}`,
             'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
-          body: JSON.stringify({ bookId, language, voice, forceRegenerate }),
+          body: JSON.stringify({
+            bookId,
+            language,
+            voice,
+            forceRegenerate: forceRegenerate || false,
+            startOrder,
+            count: BATCH_SIZE,
+          }),
         }
       );
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed');
 
-      // Save voice to cache and clear audio player cache
       if (voice) setVoiceCacheEntry(bookId, language, voice);
       if (forceRegenerate) clearAudioCache();
 
-      setState({
-        isGenerating: false,
-        progress: `Done! Generated: ${result.generated}, skipped: ${result.skipped || 0}`,
-        error: null,
-      });
-    } catch (err: any) {
-      setState({ isGenerating: false, progress: '', error: err.message });
-    }
-  }, [bookId]);
-
-  const generateBoth = useCallback(async (lang1: Language, lang2: Language, voice1?: string, voice2?: string) => {
-    if (!bookId) return;
-    setState({ isGenerating: true, progress: `Generating audio (${lang1})…`, error: null });
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      const langs = [
-        { lang: lang1, voice: voice1 },
-        { lang: lang2, voice: voice2 },
-      ];
-
-      for (const { lang, voice } of langs) {
-        const forceRegenerate = shouldForceRegenerate(bookId, lang, voice);
-
-        setState(s => ({ ...s, progress: `Generating audio (${lang})…` }));
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-audio`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-              'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            },
-            body: JSON.stringify({ bookId, language: lang, voice, forceRegenerate }),
-          }
-        );
-
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || `Generation failed for ${lang}`);
-
-        if (voice) setVoiceCacheEntry(bookId, lang, voice);
-        if (forceRegenerate) clearAudioCache();
+      if (!silent) {
+        setState(s => ({ ...s, isGenerating: false, progress: '' }));
       }
-
-      setState({ isGenerating: false, progress: 'All audio generated!', error: null });
     } catch (err: any) {
-      setState({ isGenerating: false, progress: '', error: err.message });
+      if (!silent) {
+        setState({ isGenerating: false, progress: '', error: err.message });
+      }
+      console.error('Audio batch generation error:', err);
     }
   }, [bookId]);
 
-  return { ...state, generate, generateBoth };
+  const generateBothBatch = useCallback(async (
+    lang1: Language,
+    lang2: Language,
+    startOrder: number,
+    voice1?: string,
+    voice2?: string,
+    forceRegenerate?: boolean,
+    silent?: boolean,
+  ) => {
+    if (!bookId) return;
+
+    const force1 = forceRegenerate || shouldForceRegenerate(bookId, lang1, voice1);
+    const force2 = forceRegenerate || shouldForceRegenerate(bookId, lang2, voice2);
+
+    if (force1 || force2) {
+      resetRanges();
+    }
+
+    if (!silent) {
+      setState({ isGenerating: true, progress: `Generating audio…`, error: null });
+    }
+
+    await Promise.all([
+      generateBatch(lang1, startOrder, voice1, force1, silent),
+      generateBatch(lang2, startOrder, voice2, force2, silent),
+    ]);
+
+    if (!silent) {
+      setState({ isGenerating: false, progress: '', error: null });
+    }
+  }, [bookId, generateBatch, resetRanges]);
+
+  return { ...state, generateBatch, generateBothBatch, resetRanges };
 }
