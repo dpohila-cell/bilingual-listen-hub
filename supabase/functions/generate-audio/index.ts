@@ -7,15 +7,19 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const VOICE_MAP: Record<string, { languageCode: string; name: string }> = {
+const DEFAULT_VOICES: Record<string, { languageCode: string; name: string }> = {
   en: { languageCode: "en-US", name: "en-US-Wavenet-D" },
   ru: { languageCode: "ru-RU", name: "ru-RU-Wavenet-B" },
   sv: { languageCode: "sv-SE", name: "sv-SE-Wavenet-A" },
 };
 
-async function synthesize(text: string, language: string, apiKey: string): Promise<Uint8Array> {
-  const voiceConfig = VOICE_MAP[language] || VOICE_MAP["en"];
+const LANG_CODE_MAP: Record<string, string> = {
+  en: "en-US",
+  ru: "ru-RU",
+  sv: "sv-SE",
+};
 
+async function synthesize(text: string, languageCode: string, voiceName: string, apiKey: string): Promise<Uint8Array> {
   const response = await fetch(
     `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
     {
@@ -23,14 +27,8 @@ async function synthesize(text: string, language: string, apiKey: string): Promi
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         input: { text },
-        voice: {
-          languageCode: voiceConfig.languageCode,
-          name: voiceConfig.name,
-        },
-        audioConfig: {
-          audioEncoding: "MP3",
-          sampleRateHertz: 24000,
-        },
+        voice: { languageCode, name: voiceName },
+        audioConfig: { audioEncoding: "MP3", sampleRateHertz: 24000 },
       }),
     }
   );
@@ -41,7 +39,6 @@ async function synthesize(text: string, language: string, apiKey: string): Promi
   }
 
   const result = await response.json();
-  // Google returns base64-encoded audio
   const binaryString = atob(result.audioContent);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
@@ -59,16 +56,14 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const GOOGLE_TTS_API_KEY = Deno.env.get("GOOGLE_TTS_API_KEY");
     if (!GOOGLE_TTS_API_KEY) {
       return new Response(JSON.stringify({ error: "Google TTS API key not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -82,36 +77,28 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { bookId, language } = await req.json();
+    const { bookId, language, voice } = await req.json();
     if (!bookId || !language) {
       return new Response(JSON.stringify({ error: "Missing bookId or language" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify ownership
     const { data: book, error: bookError } = await adminClient
-      .from("books")
-      .select("id, user_id")
-      .eq("id", bookId)
-      .single();
+      .from("books").select("id, user_id").eq("id", bookId).single();
 
     if (bookError || !book || book.user_id !== user.id) {
       return new Response(JSON.stringify({ error: "Book not found or not owned" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch sentences
     const { data: sentences, error: sentError } = await adminClient
       .from("sentences")
       .select("id, sentence_order, original_text, en_translation, ru_translation, sv_translation")
@@ -120,21 +107,19 @@ serve(async (req) => {
 
     if (sentError || !sentences || sentences.length === 0) {
       return new Response(JSON.stringify({ error: "No sentences found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // Use custom voice or default
+    const defaultVoice = DEFAULT_VOICES[language] || DEFAULT_VOICES["en"];
+    const voiceName = voice || defaultVoice.name;
+    const languageCode = LANG_CODE_MAP[language] || defaultVoice.languageCode;
+
     const storagePath = `${bookId}/${language}`;
 
-    // Check existing files
-    const { data: existingFiles } = await adminClient.storage
-      .from("audio")
-      .list(storagePath);
-
-    const existingSet = new Set(
-      (existingFiles || []).map((f: { name: string }) => f.name)
-    );
+    const { data: existingFiles } = await adminClient.storage.from("audio").list(storagePath);
+    const existingSet = new Set((existingFiles || []).map((f: { name: string }) => f.name));
 
     const toGenerate = sentences.filter((s) => {
       const fileName = `${String(s.sentence_order).padStart(5, "0")}.mp3`;
@@ -148,7 +133,6 @@ serve(async (req) => {
       );
     }
 
-    // Process in batches of 5
     const BATCH_SIZE = 5;
     let generated = 0;
     const errors: string[] = [];
@@ -166,22 +150,16 @@ serve(async (req) => {
 
           if (!text || text.trim().length === 0) return;
 
-          const audioData = await synthesize(text, language, GOOGLE_TTS_API_KEY);
+          const audioData = await synthesize(text, languageCode, voiceName, GOOGLE_TTS_API_KEY);
 
           const fileName = `${String(sentence.sentence_order).padStart(5, "0")}.mp3`;
           const filePath = `${storagePath}/${fileName}`;
 
           const { error: uploadError } = await adminClient.storage
             .from("audio")
-            .upload(filePath, audioData, {
-              contentType: "audio/mpeg",
-              upsert: true,
-            });
+            .upload(filePath, audioData, { contentType: "audio/mpeg", upsert: true });
 
-          if (uploadError) {
-            throw new Error(`Upload failed for ${fileName}: ${uploadError.message}`);
-          }
-
+          if (uploadError) throw new Error(`Upload failed for ${fileName}: ${uploadError.message}`);
           generated++;
         })
       );
