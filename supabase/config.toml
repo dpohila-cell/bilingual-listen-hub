@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.generate-audio]
 verify_jwt = false
+
+[functions.translate-batch]
+verify_jwt = false
