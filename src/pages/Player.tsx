@@ -1,14 +1,15 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useGenerateAudio } from '@/hooks/useGenerateAudio';
+import { useTranslateBatch } from '@/hooks/useTranslateBatch';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Sentence, Language } from '@/types';
@@ -17,7 +18,9 @@ export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { isGenerating, progress: genProgress, error: genError, generateBothBatch, resetRanges } = useGenerateAudio(bookId);
+  const { translateRange, resetRanges: resetTranslateRanges, TRANSLATE_BATCH_SIZE } = useTranslateBatch(bookId);
   const { voiceSettings, getVoice } = useVoiceSettings();
   const audioTriggeredRef = useRef<string | null>(null);
   const lastPrefetchTriggerRef = useRef<number>(-1);
@@ -78,6 +81,14 @@ export default function Player() {
     [dbSentences]
   );
 
+  // Find the last translated sentence order
+  const lastTranslatedOrder = useMemo(() => {
+    for (let i = dbSentences.length - 1; i >= 0; i--) {
+      if (dbSentences[i].en_translation) return dbSentences[i].sentence_order;
+    }
+    return 0;
+  }, [dbSentences]);
+
   const {
     currentIndex,
     isPlaying,
@@ -94,12 +105,34 @@ export default function Player() {
     totalSentences,
   } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
 
-  // Helper: get the sentence_order (1-based) for a given 0-based index
   const getSentenceOrder = (index: number) => {
     if (sentences.length === 0) return 1;
     const clamped = Math.max(0, Math.min(index, sentences.length - 1));
     return sentences[clamped].sentenceOrder;
   };
+
+  // Core function: ensure translations exist, THEN trigger audio generation
+  const ensureTranslatedAndGenerateAudio = useCallback(async (
+    sentenceOrder: number,
+    lang1: Language,
+    lang2: Language,
+    v1: string | undefined,
+    v2: string | undefined,
+    forceRegenerate: boolean,
+    silent: boolean,
+  ) => {
+    if (!bookId) return;
+
+    // Translate first (if needed), then generate audio
+    const translated = await translateRange(sentenceOrder);
+    if (translated) {
+      // Refetch sentences to get updated translations
+      await queryClient.invalidateQueries({ queryKey: ['sentences', bookId] });
+    }
+
+    // Now generate audio
+    generateBothBatch(lang1, lang2, sentenceOrder, v1, v2, forceRegenerate, silent);
+  }, [bookId, translateRange, generateBothBatch, queryClient]);
 
   // Auto-generate first batch when player opens or voice/language changes
   useEffect(() => {
@@ -116,10 +149,30 @@ export default function Player() {
     audioTriggeredRef.current = voiceKey;
     lastPrefetchTriggerRef.current = -1;
     resetRanges();
-    generateBothBatch(lang1, lang2, getSentenceOrder(currentIndex), v1, v2, isVoiceChange);
-  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges, sentences]);
 
-  // Auto-generate next batch every 5 sentences
+    const order = getSentenceOrder(currentIndex);
+    ensureTranslatedAndGenerateAudio(order, lang1, lang2, v1, v2, isVoiceChange, false);
+  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, ensureTranslatedAndGenerateAudio, getVoice, resetRanges, sentences]);
+
+  // Prefetch translations + audio when approaching end of translated range
+  useEffect(() => {
+    if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
+
+    const currentOrder = getSentenceOrder(currentIndex);
+    // Trigger prefetch when within 5 sentences of last translated
+    const threshold = lastTranslatedOrder - 5;
+    
+    if (currentOrder >= threshold && currentOrder > 0) {
+      const nextTranslateStart = lastTranslatedOrder + 1;
+      if (nextTranslateStart <= sentences[sentences.length - 1]?.sentenceOrder) {
+        const v1 = getVoice(settings.language1);
+        const v2 = getVoice(settings.language2);
+        ensureTranslatedAndGenerateAudio(nextTranslateStart, settings.language1, settings.language2, v1, v2, false, true);
+      }
+    }
+  }, [currentIndex, lastTranslatedOrder, bookId, book?.status, settings.language1, settings.language2, ensureTranslatedAndGenerateAudio, getVoice, sentences]);
+
+  // Also prefetch audio every 5 sentences (for already-translated sentences)
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
 
@@ -195,11 +248,12 @@ export default function Player() {
           onChange={(e) => {
             const newIndex = Number(e.target.value);
             goTo(newIndex);
-            // Trigger audio generation for the area around the seek position
+            // On manual seek: translate from this position, then generate audio
             if (bookId && book?.status === 'ready') {
               const v1 = getVoice(settings.language1);
               const v2 = getVoice(settings.language2);
-              generateBothBatch(settings.language1, settings.language2, getSentenceOrder(newIndex), v1, v2, false, true);
+              const order = getSentenceOrder(newIndex);
+              ensureTranslatedAndGenerateAudio(order, settings.language1, settings.language2, v1, v2, false, true);
             }
           }}
           className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary
@@ -248,7 +302,6 @@ export default function Player() {
           totalSentences={totalSentences}
         />
 
-        {/* Audio generation status indicator */}
         {isGenerating && (
           <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />

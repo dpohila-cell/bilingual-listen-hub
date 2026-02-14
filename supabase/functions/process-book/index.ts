@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 function splitIntoSentences(text: string): string[] {
-  // Normalize whitespace: collapse newlines/tabs/spaces
   const normalized = text
     .replace(/\r\n/g, "\n")
     .replace(/\n{2,}/g, " ")
@@ -16,27 +15,19 @@ function splitIntoSentences(text: string): string[] {
     .replace(/ {2,}/g, " ")
     .trim();
 
-  // Split on sentence-ending punctuation followed by space
   return normalized
     .split(/(?<=[.!?…»"])\s+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 5);
 }
 
-// Detect encoding from BOM or heuristics, decode accordingly
 function decodeText(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
 
-  // Check for UTF-16 LE BOM: FF FE
   if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
-    console.log("Detected UTF-16 LE BOM");
     return new TextDecoder("utf-16le").decode(bytes);
   }
-
-  // Check for UTF-16 BE BOM: FE FF
   if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
-    console.log("Detected UTF-16 BE BOM");
-    // TextDecoder doesn't support utf-16be in all runtimes, manually swap bytes
     const swapped = new Uint8Array(bytes.length);
     for (let i = 0; i < bytes.length - 1; i += 2) {
       swapped[i] = bytes[i + 1];
@@ -44,40 +35,57 @@ function decodeText(buffer: ArrayBuffer): string {
     }
     return new TextDecoder("utf-16le").decode(swapped);
   }
-
-  // Check for UTF-8 BOM: EF BB BF
   if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
-    console.log("Detected UTF-8 BOM");
     return new TextDecoder("utf-8").decode(bytes);
   }
 
-  // Try UTF-8 (no BOM)
   try {
     const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const questionMarkRatio = (utf8.match(/\uFFFD/g) || []).length / utf8.length;
-    if (questionMarkRatio < 0.1) {
-      console.log("Decoded as UTF-8 (no BOM)");
-      return utf8;
+    if (questionMarkRatio < 0.1) return utf8;
+  } catch {}
+
+  try { return new TextDecoder("windows-1251").decode(bytes); } catch {}
+  try { return new TextDecoder("koi8-r").decode(bytes); } catch {}
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+async function translateBatch(
+  sentences: string[],
+  lovableApiKey: string
+): Promise<Array<{ en: string; ru: string; sv: string }>> {
+  const prompt = `Translate each sentence below into English, Russian, and Swedish.
+Return ONLY a JSON array where each element has: {"en": "...", "ru": "...", "sv": "..."}
+No extra text, no markdown fences. Just the JSON array.
+
+Sentences:
+${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
+
+  try {
+    const aiResponse = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lovableApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+        }),
+      }
+    );
+
+    const aiData = await aiResponse.json();
+    let content = aiData.choices[0].message.content.trim();
+    if (content.startsWith("```")) {
+      content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     }
+    return JSON.parse(content);
   } catch {
-    // UTF-8 decoding failed
-  }
-
-  // Try Windows-1251 (common for Russian text)
-  try {
-    console.log("Trying Windows-1251");
-    return new TextDecoder("windows-1251").decode(bytes);
-  } catch {
-    // Fallback
-  }
-
-  // Try KOI8-R
-  try {
-    console.log("Trying KOI8-R");
-    return new TextDecoder("koi8-r").decode(bytes);
-  } catch {
-    // Final fallback: lossy UTF-8
-    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    return sentences.map((s) => ({ en: s, ru: s, sv: s }));
   }
 }
 
@@ -126,12 +134,8 @@ Deno.serve(async (req) => {
     }
 
     const rawBuffer = await fileData.arrayBuffer();
-    const rawBytes = new Uint8Array(rawBuffer);
-    console.log("First 20 bytes hex:", Array.from(rawBytes.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '));
-    console.log("First 20 bytes decimal:", Array.from(rawBytes.slice(0, 20)).join(', '));
     const text = decodeText(rawBuffer);
-    console.log("Decoded text first 100 chars:", JSON.stringify(text.substring(0, 100)));
-    let sentences = splitIntoSentences(text);
+    const sentences = splitIntoSentences(text);
 
     if (sentences.length === 0) {
       await supabase.from("books").update({ status: "error" }).eq("id", bookId);
@@ -146,109 +150,48 @@ Deno.serve(async (req) => {
     // Delete any existing sentences for this book (in case of retry)
     await supabase.from("sentences").delete().eq("book_id", bookId);
 
-    // Process in batches of 25 sentences for translation
-    // Each batch is saved immediately to survive timeouts
-    const BATCH_SIZE = 25;
-    let totalSaved = 0;
+    // Step 1: Save ALL sentences with original text only (no translations yet)
+    const SAVE_BATCH = 500;
+    for (let i = 0; i < sentences.length; i += SAVE_BATCH) {
+      const batch = sentences.slice(i, i + SAVE_BATCH);
+      const rows = batch.map((s, j) => ({
+        book_id: bookId,
+        sentence_order: i + j + 1,
+        original_text: s,
+        en_translation: null,
+        ru_translation: null,
+        sv_translation: null,
+      }));
+      const { error: insertError } = await supabase.from("sentences").insert(rows);
+      if (insertError) console.error(`Insert error at ${i}:`, insertError);
+    }
 
-    for (let i = 0; i < sentences.length; i += BATCH_SIZE) {
-      const batch = sentences.slice(i, i + BATCH_SIZE);
-      const prompt = `Translate each sentence below into English, Russian, and Swedish.
-Return ONLY a JSON array where each element has: {"en": "...", "ru": "...", "sv": "..."}
-No extra text, no markdown fences. Just the JSON array.
+    console.log(`All ${sentences.length} originals saved. Translating first 25...`);
 
-Sentences:
-${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
+    // Step 2: Translate only the first 25 sentences
+    const firstBatch = sentences.slice(0, 25);
+    const translations = await translateBatch(firstBatch, lovableApiKey);
 
-      let batchRows: Array<{
-        book_id: string;
-        sentence_order: number;
-        original_text: string;
-        en_translation: string;
-        ru_translation: string;
-        sv_translation: string;
-      }> = [];
-
-      try {
-        const aiResponse = await fetch(
-          "https://ai.gateway.lovable.dev/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${lovableApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [{ role: "user", content: prompt }],
-              temperature: 0.2,
-            }),
-          }
-        );
-
-        const aiData = await aiResponse.json();
-        let translations: Array<{ en: string; ru: string; sv: string }>;
-
-        try {
-          let content = aiData.choices[0].message.content.trim();
-          if (content.startsWith("```")) {
-            content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-          }
-          translations = JSON.parse(content);
-        } catch {
-          translations = batch.map((s) => ({ en: s, ru: s, sv: s }));
-        }
-
-        for (let j = 0; j < batch.length; j++) {
-          const t = translations[j] || { en: batch[j], ru: batch[j], sv: batch[j] };
-          batchRows.push({
-            book_id: bookId,
-            sentence_order: i + j + 1,
-            original_text: batch[j],
-            en_translation: t.en,
-            ru_translation: t.ru,
-            sv_translation: t.sv,
-          });
-        }
-      } catch (err) {
-        console.error(`Translation batch ${i} failed:`, err);
-        for (let j = 0; j < batch.length; j++) {
-          batchRows.push({
-            book_id: bookId,
-            sentence_order: i + j + 1,
-            original_text: batch[j],
-            en_translation: batch[j],
-            ru_translation: batch[j],
-            sv_translation: batch[j],
-          });
-        }
-      }
-
-      // Insert this batch immediately
-      const { error: insertError } = await supabase.from("sentences").insert(batchRows);
-      if (insertError) {
-        console.error(`Insert error for batch starting at ${i}:`, insertError);
-        // Continue with next batch instead of failing entirely
-      } else {
-        totalSaved += batchRows.length;
-      }
-
-      // Update book with progress so far
+    for (let j = 0; j < firstBatch.length; j++) {
+      const t = translations[j] || { en: firstBatch[j], ru: firstBatch[j], sv: firstBatch[j] };
       await supabase
-        .from("books")
-        .update({ sentence_count: totalSaved })
-        .eq("id", bookId);
-
-      console.log(`Batch ${i}-${i + batch.length} saved. Total: ${totalSaved}/${sentences.length}`);
+        .from("sentences")
+        .update({
+          en_translation: t.en,
+          ru_translation: t.ru,
+          sv_translation: t.sv,
+        })
+        .eq("book_id", bookId)
+        .eq("sentence_order", j + 1);
     }
 
     await supabase
       .from("books")
-      .update({ status: "ready", sentence_count: totalSaved })
+      .update({ status: "ready", sentence_count: sentences.length })
       .eq("id", bookId);
 
     return new Response(
-      JSON.stringify({ success: true, sentenceCount: totalSaved }),
+      JSON.stringify({ success: true, sentenceCount: sentences.length, translated: firstBatch.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
