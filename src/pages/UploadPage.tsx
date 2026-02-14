@@ -78,7 +78,7 @@ export default function UploadPage() {
       const { data: { session } } = await supabase.auth.getSession();
       try {
         const response = await supabase.functions.invoke('process-book', {
-          body: { bookId: book.id, filePath },
+          body: { bookId: book.id, filePath, originalLanguage },
           headers: { Authorization: `Bearer ${session?.access_token}` },
         });
 
