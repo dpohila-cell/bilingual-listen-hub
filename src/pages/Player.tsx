@@ -24,6 +24,7 @@ export default function Player() {
   const { voiceSettings, getVoice } = useVoiceSettings();
   const audioTriggeredRef = useRef<string | null>(null);
   const lastPrefetchTriggerRef = useRef<number>(-1);
+  const translationInProgressRef = useRef(false);
 
   const { data: book, isLoading: bookLoading } = useQuery({
     queryKey: ['book', bookId],
@@ -81,12 +82,18 @@ export default function Player() {
     [dbSentences]
   );
 
-  // Find the last translated sentence order
+  // Find the last consecutively translated sentence order (from current position forward)
   const lastTranslatedOrder = useMemo(() => {
-    for (let i = dbSentences.length - 1; i >= 0; i--) {
-      if (dbSentences[i].en_translation) return dbSentences[i].sentence_order;
+    let last = 0;
+    for (const s of dbSentences) {
+      if (s.en_translation) {
+        last = s.sentence_order;
+      } else {
+        // Stop at first gap — only count continuous translated range
+        if (last > 0) break;
+      }
     }
-    return 0;
+    return last;
   }, [dbSentences]);
 
   const {
@@ -121,17 +128,21 @@ export default function Player() {
     forceRegenerate: boolean,
     silent: boolean,
   ) => {
-    if (!bookId) return;
+    if (!bookId || translationInProgressRef.current) return;
 
-    // Translate first (if needed), then generate audio
-    const translated = await translateRange(sentenceOrder);
-    if (translated) {
-      // Refetch sentences to get updated translations
-      await queryClient.invalidateQueries({ queryKey: ['sentences', bookId] });
+    translationInProgressRef.current = true;
+    try {
+      // Translate the needed range
+      const translated = await translateRange(sentenceOrder);
+      if (translated) {
+        // Refetch sentences to get updated translations
+        await queryClient.invalidateQueries({ queryKey: ['sentences', bookId] });
+      }
+      // Now generate audio
+      generateBothBatch(lang1, lang2, sentenceOrder, v1, v2, forceRegenerate, silent);
+    } finally {
+      translationInProgressRef.current = false;
     }
-
-    // Now generate audio
-    generateBothBatch(lang1, lang2, sentenceOrder, v1, v2, forceRegenerate, silent);
   }, [bookId, translateRange, generateBothBatch, queryClient]);
 
   // Auto-generate first batch when player opens or voice/language changes
@@ -154,21 +165,20 @@ export default function Player() {
     ensureTranslatedAndGenerateAudio(order, lang1, lang2, v1, v2, isVoiceChange, false);
   }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, ensureTranslatedAndGenerateAudio, getVoice, resetRanges, sentences]);
 
-  // Prefetch translations + audio when approaching end of translated range
+  // Prefetch translations when approaching end of translated range (5 sentences before)
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
+    if (translationInProgressRef.current) return;
 
     const currentOrder = getSentenceOrder(currentIndex);
-    // Trigger prefetch when within 5 sentences of last translated
-    const threshold = lastTranslatedOrder - 5;
-    
-    if (currentOrder >= threshold && currentOrder > 0) {
-      const nextTranslateStart = lastTranslatedOrder + 1;
-      if (nextTranslateStart <= sentences[sentences.length - 1]?.sentenceOrder) {
-        const v1 = getVoice(settings.language1);
-        const v2 = getVoice(settings.language2);
-        ensureTranslatedAndGenerateAudio(nextTranslateStart, settings.language1, settings.language2, v1, v2, false, true);
-      }
+    const maxOrder = sentences[sentences.length - 1]?.sentenceOrder || 0;
+
+    // Only trigger when within 5 sentences of the last translated sentence
+    if (lastTranslatedOrder > 0 && currentOrder >= lastTranslatedOrder - 5 && lastTranslatedOrder < maxOrder) {
+      const nextStart = lastTranslatedOrder + 1;
+      const v1 = getVoice(settings.language1);
+      const v2 = getVoice(settings.language2);
+      ensureTranslatedAndGenerateAudio(nextStart, settings.language1, settings.language2, v1, v2, false, true);
     }
   }, [currentIndex, lastTranslatedOrder, bookId, book?.status, settings.language1, settings.language2, ensureTranslatedAndGenerateAudio, getVoice, sentences]);
 
@@ -253,6 +263,8 @@ export default function Player() {
               const v1 = getVoice(settings.language1);
               const v2 = getVoice(settings.language2);
               const order = getSentenceOrder(newIndex);
+              // Reset translate dedup so we can translate this new range
+              resetTranslateRanges();
               ensureTranslatedAndGenerateAudio(order, settings.language1, settings.language2, v1, v2, false, true);
             }
           }}
