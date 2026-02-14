@@ -161,15 +161,19 @@ export default function Player() {
 
     try {
       // Step 1: Always call translate (server skips if already done)
-      await translateRange(sentenceOrder);
+      const translated = await translateRange(sentenceOrder);
       
       // Step 2: Wait for refetch so UI and audio get fresh translations
       await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
 
       if (!silent) setIsTranslating(false);
 
-      // Step 3: Generate audio (translations are now in DB and in local cache)
-      generateBothBatch(lang1, lang2, sentenceOrder, v1, v2, forceRegenerate, silent);
+      // Step 3: Generate audio — force regenerate if new translations were just created
+      // This ensures audio files created before translations existed get replaced
+      const shouldForce = forceRegenerate || translated;
+      await generateBothBatch(lang1, lang2, sentenceOrder, v1, v2, shouldForce, silent);
+    } catch (err) {
+      console.error('ensureTranslatedAndGenerateAudio error:', err);
     } finally {
       if (!silent) setIsTranslating(false);
     }
