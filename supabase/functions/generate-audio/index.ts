@@ -81,12 +81,15 @@ serve(async (req) => {
       });
     }
 
-    const { bookId, language, voice, forceRegenerate } = await req.json();
+    const { bookId, language, voice, forceRegenerate, startOrder, count } = await req.json();
     if (!bookId || !language) {
       return new Response(JSON.stringify({ error: "Missing bookId or language" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const batchStart = startOrder ?? 0;
+    const batchCount = count ?? 10;
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -103,6 +106,8 @@ serve(async (req) => {
       .from("sentences")
       .select("id, sentence_order, original_text, en_translation, ru_translation, sv_translation")
       .eq("book_id", bookId)
+      .gte("sentence_order", batchStart)
+      .lt("sentence_order", batchStart + batchCount)
       .order("sentence_order", { ascending: true });
 
     if (sentError || !sentences || sentences.length === 0) {

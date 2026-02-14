@@ -17,9 +17,10 @@ export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuth();
-  const { isGenerating, progress: genProgress, error: genError, generateBoth } = useGenerateAudio(bookId);
+  const { isGenerating, progress: genProgress, error: genError, generateBothBatch, resetRanges } = useGenerateAudio(bookId);
   const { voiceSettings, getVoice } = useVoiceSettings();
   const audioTriggeredRef = useRef<string | null>(null);
+  const lastPrefetchTriggerRef = useRef<number>(-1);
 
   const { data: book, isLoading: bookLoading } = useQuery({
     queryKey: ['book', bookId],
@@ -93,7 +94,7 @@ export default function Player() {
     totalSentences,
   } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
 
-  // Auto-generate audio when player opens or voice settings change
+  // Auto-generate first batch when player opens or voice/language changes
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || isGenerating) return;
 
@@ -105,8 +106,30 @@ export default function Player() {
     if (audioTriggeredRef.current === voiceKey) return;
 
     audioTriggeredRef.current = voiceKey;
-    generateBoth(lang1, lang2, v1, v2);
-  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBoth, getVoice]);
+    lastPrefetchTriggerRef.current = -1;
+    resetRanges();
+    generateBothBatch(lang1, lang2, currentIndex, v1, v2, voiceKey !== audioTriggeredRef.current);
+  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges]);
+
+  // Auto-generate next batch every 5 sentences
+  useEffect(() => {
+    if (!bookId || !book || book.status !== 'ready') return;
+
+    // Calculate which "trigger point" we've passed (every 5 sentences)
+    const triggerPoint = Math.floor(currentIndex / 5) * 5;
+    if (triggerPoint <= lastPrefetchTriggerRef.current) return;
+    if (lastPrefetchTriggerRef.current === -1 && triggerPoint === 0) {
+      // First batch already triggered above
+      lastPrefetchTriggerRef.current = 0;
+      return;
+    }
+
+    lastPrefetchTriggerRef.current = triggerPoint;
+    const nextBatchStart = triggerPoint + 5;
+    const v1 = getVoice(settings.language1);
+    const v2 = getVoice(settings.language2);
+    generateBothBatch(settings.language1, settings.language2, nextBatchStart, v1, v2, false, true);
+  }, [currentIndex, bookId, book?.status, settings.language1, settings.language2, generateBothBatch, getVoice]);
 
   // Save progress on index change
   useEffect(() => {
@@ -163,7 +186,16 @@ export default function Player() {
           min={0}
           max={Math.max(totalSentences - 1, 0)}
           value={currentIndex}
-          onChange={(e) => goTo(Number(e.target.value))}
+          onChange={(e) => {
+            const newIndex = Number(e.target.value);
+            goTo(newIndex);
+            // Trigger audio generation for the area around the seek position
+            if (bookId && book?.status === 'ready') {
+              const v1 = getVoice(settings.language1);
+              const v2 = getVoice(settings.language2);
+              generateBothBatch(settings.language1, settings.language2, newIndex, v1, v2, false, true);
+            }
+          }}
           className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary
             [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
             [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md
