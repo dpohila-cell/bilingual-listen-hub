@@ -141,18 +141,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Limit sentences to avoid timeout
-    const MAX_SENTENCES = 100;
-    const truncated = sentences.length > MAX_SENTENCES;
-    if (truncated) {
-      sentences = sentences.slice(0, MAX_SENTENCES);
-    }
+    console.log(`Total sentences found: ${sentences.length}`);
 
     // Delete any existing sentences for this book (in case of retry)
     await supabase.from("sentences").delete().eq("book_id", bookId);
 
     // Process in batches of 10 sentences for translation
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 25;
     const allRows: Array<{
       book_id: string;
       sentence_order: number;
@@ -245,7 +240,7 @@ ${batch.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
       .eq("id", bookId);
 
     return new Response(
-      JSON.stringify({ success: true, sentenceCount: allRows.length, truncated }),
+      JSON.stringify({ success: true, sentenceCount: allRows.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
