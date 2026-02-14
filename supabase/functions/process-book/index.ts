@@ -7,31 +7,65 @@ const corsHeaders = {
 };
 
 function splitIntoSentences(text: string): string[] {
-  return text
+  // Normalize whitespace: collapse newlines/tabs/spaces
+  const normalized = text
     .replace(/\r\n/g, "\n")
+    .replace(/\n{2,}/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\t+/g, " ")
+    .replace(/ {2,}/g, " ")
+    .trim();
+
+  // Split on sentence-ending punctuation followed by space
+  return normalized
     .split(/(?<=[.!?…»"])\s+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 2);
+    .filter((s) => s.length > 5);
 }
 
-// Detect if bytes are valid UTF-8; if not, decode as Windows-1251
+// Detect encoding from BOM or heuristics, decode accordingly
 function decodeText(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
 
-  // Try UTF-8 first
+  // Check for UTF-16 LE BOM: FF FE
+  if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+    console.log("Detected UTF-16 LE BOM");
+    return new TextDecoder("utf-16le").decode(bytes);
+  }
+
+  // Check for UTF-16 BE BOM: FE FF
+  if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    console.log("Detected UTF-16 BE BOM");
+    // TextDecoder doesn't support utf-16be in all runtimes, manually swap bytes
+    const swapped = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length - 1; i += 2) {
+      swapped[i] = bytes[i + 1];
+      swapped[i + 1] = bytes[i];
+    }
+    return new TextDecoder("utf-16le").decode(swapped);
+  }
+
+  // Check for UTF-8 BOM: EF BB BF
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    console.log("Detected UTF-8 BOM");
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+
+  // Try UTF-8 (no BOM)
   try {
     const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    // Check if it has actual content (not just question marks / replacement chars)
     const questionMarkRatio = (utf8.match(/\uFFFD/g) || []).length / utf8.length;
     if (questionMarkRatio < 0.1) {
+      console.log("Decoded as UTF-8 (no BOM)");
       return utf8;
     }
   } catch {
-    // UTF-8 decoding failed, try other encodings
+    // UTF-8 decoding failed
   }
 
   // Try Windows-1251 (common for Russian text)
   try {
+    console.log("Trying Windows-1251");
     return new TextDecoder("windows-1251").decode(bytes);
   } catch {
     // Fallback
@@ -39,6 +73,7 @@ function decodeText(buffer: ArrayBuffer): string {
 
   // Try KOI8-R
   try {
+    console.log("Trying KOI8-R");
     return new TextDecoder("koi8-r").decode(bytes);
   } catch {
     // Final fallback: lossy UTF-8
