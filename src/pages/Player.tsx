@@ -94,9 +94,16 @@ export default function Player() {
     totalSentences,
   } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
 
+  // Helper: get the sentence_order (1-based) for a given 0-based index
+  const getSentenceOrder = (index: number) => {
+    if (sentences.length === 0) return 1;
+    const clamped = Math.max(0, Math.min(index, sentences.length - 1));
+    return sentences[clamped].sentenceOrder;
+  };
+
   // Auto-generate first batch when player opens or voice/language changes
   useEffect(() => {
-    if (!bookId || !book || book.status !== 'ready' || isGenerating) return;
+    if (!bookId || !book || book.status !== 'ready' || isGenerating || sentences.length === 0) return;
 
     const lang1 = settings.language1;
     const lang2 = settings.language2;
@@ -105,31 +112,30 @@ export default function Player() {
     const voiceKey = `${bookId}-${lang1}-${lang2}-${v1}-${v2}`;
     if (audioTriggeredRef.current === voiceKey) return;
 
+    const isVoiceChange = audioTriggeredRef.current !== null;
     audioTriggeredRef.current = voiceKey;
     lastPrefetchTriggerRef.current = -1;
     resetRanges();
-    generateBothBatch(lang1, lang2, currentIndex, v1, v2, voiceKey !== audioTriggeredRef.current);
-  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges]);
+    generateBothBatch(lang1, lang2, getSentenceOrder(currentIndex), v1, v2, isVoiceChange);
+  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges, sentences]);
 
   // Auto-generate next batch every 5 sentences
   useEffect(() => {
-    if (!bookId || !book || book.status !== 'ready') return;
+    if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
 
-    // Calculate which "trigger point" we've passed (every 5 sentences)
     const triggerPoint = Math.floor(currentIndex / 5) * 5;
     if (triggerPoint <= lastPrefetchTriggerRef.current) return;
     if (lastPrefetchTriggerRef.current === -1 && triggerPoint === 0) {
-      // First batch already triggered above
       lastPrefetchTriggerRef.current = 0;
       return;
     }
 
     lastPrefetchTriggerRef.current = triggerPoint;
-    const nextBatchStart = triggerPoint + 5;
+    const nextBatchStart = getSentenceOrder(Math.min(triggerPoint + 5, sentences.length - 1));
     const v1 = getVoice(settings.language1);
     const v2 = getVoice(settings.language2);
     generateBothBatch(settings.language1, settings.language2, nextBatchStart, v1, v2, false, true);
-  }, [currentIndex, bookId, book?.status, settings.language1, settings.language2, generateBothBatch, getVoice]);
+  }, [currentIndex, bookId, book?.status, settings.language1, settings.language2, generateBothBatch, getVoice, sentences]);
 
   // Save progress on index change
   useEffect(() => {
@@ -193,7 +199,7 @@ export default function Player() {
             if (bookId && book?.status === 'ready') {
               const v1 = getVoice(settings.language1);
               const v2 = getVoice(settings.language2);
-              generateBothBatch(settings.language1, settings.language2, newIndex, v1, v2, false, true);
+              generateBothBatch(settings.language1, settings.language2, getSentenceOrder(newIndex), v1, v2, false, true);
             }
           }}
           className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary

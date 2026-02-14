@@ -123,13 +123,13 @@ serve(async (req) => {
 
     const storagePath = `${bookId}/${language}`;
 
-    // If forceRegenerate, delete existing audio files first
-    if (forceRegenerate) {
-      const { data: existingFiles } = await adminClient.storage.from("audio").list(storagePath);
-      if (existingFiles && existingFiles.length > 0) {
-        const filesToDelete = existingFiles.map((f: { name: string }) => `${storagePath}/${f.name}`);
-        await adminClient.storage.from("audio").remove(filesToDelete);
-      }
+    // If forceRegenerate, delete only the files in this batch range
+    if (forceRegenerate && sentences.length > 0) {
+      const filesToDelete = sentences.map((s) => {
+        const fileName = `${String(s.sentence_order).padStart(5, "0")}.mp3`;
+        return `${storagePath}/${fileName}`;
+      });
+      await adminClient.storage.from("audio").remove(filesToDelete);
     }
 
     const { data: existingFiles } = await adminClient.storage.from("audio").list(storagePath);
