@@ -97,9 +97,9 @@ export default function Player() {
         chapterId: '',
         sentenceOrder: s.sentence_order,
         originalText: s.original_text,
-        enTranslation: s.en_translation || s.original_text,
-        ruTranslation: s.ru_translation || s.original_text,
-        svTranslation: s.sv_translation || s.original_text,
+        enTranslation: s.en_translation || '',
+        ruTranslation: s.ru_translation || '',
+        svTranslation: s.sv_translation || '',
       })),
     [dbSentences]
   );

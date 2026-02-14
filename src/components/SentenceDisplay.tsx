@@ -54,7 +54,9 @@ export function SentenceDisplay({
               </motion.span>
             )}
           </div>
-          <p className="font-serif text-lg leading-relaxed">{text1}</p>
+          <p className="font-serif text-lg leading-relaxed">
+            {text1 || <span className="text-muted-foreground italic">Translating…</span>}
+          </p>
         </motion.div>
       </AnimatePresence>
 
@@ -85,7 +87,9 @@ export function SentenceDisplay({
               </motion.span>
             )}
           </div>
-          <p className="font-serif text-lg leading-relaxed">{text2}</p>
+          <p className="font-serif text-lg leading-relaxed">
+            {text2 || <span className="text-muted-foreground italic">Translating…</span>}
+          </p>
         </motion.div>
       </AnimatePresence>
     </div>
