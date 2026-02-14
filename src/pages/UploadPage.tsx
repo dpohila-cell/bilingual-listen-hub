@@ -41,11 +41,14 @@ export default function UploadPage() {
     setCurrentProcess(0);
 
     try {
-      // 1. Upload file to storage
+      // 1. Upload file to storage as binary (preserve encoding)
       const filePath = `${user.id}/${Date.now()}-${selectedFile.name}`;
+      const fileBuffer = await selectedFile.arrayBuffer();
       const { error: uploadError } = await supabase.storage
         .from('ebooks')
-        .upload(filePath, selectedFile);
+        .upload(filePath, fileBuffer, {
+          contentType: 'application/octet-stream',
+        });
       if (uploadError) throw uploadError;
 
       setCurrentProcess(1);

@@ -9,12 +9,42 @@ const corsHeaders = {
 function splitIntoSentences(text: string): string[] {
   return text
     .replace(/\r\n/g, "\n")
-    .split(/(?<=[.!?…])\s+/)
+    .split(/(?<=[.!?…»"])\s+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 2);
 }
 
-const MAX_SENTENCES = 100; // Limit to avoid timeout
+// Detect if bytes are valid UTF-8; if not, decode as Windows-1251
+function decodeText(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+
+  // Try UTF-8 first
+  try {
+    const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    // Check if it has actual content (not just question marks / replacement chars)
+    const questionMarkRatio = (utf8.match(/\uFFFD/g) || []).length / utf8.length;
+    if (questionMarkRatio < 0.1) {
+      return utf8;
+    }
+  } catch {
+    // UTF-8 decoding failed, try other encodings
+  }
+
+  // Try Windows-1251 (common for Russian text)
+  try {
+    return new TextDecoder("windows-1251").decode(bytes);
+  } catch {
+    // Fallback
+  }
+
+  // Try KOI8-R
+  try {
+    return new TextDecoder("koi8-r").decode(bytes);
+  } catch {
+    // Final fallback: lossy UTF-8
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -60,7 +90,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const text = await fileData.text();
+    const rawBuffer = await fileData.arrayBuffer();
+    const rawBytes = new Uint8Array(rawBuffer);
+    console.log("First 20 bytes hex:", Array.from(rawBytes.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+    console.log("First 20 bytes decimal:", Array.from(rawBytes.slice(0, 20)).join(', '));
+    const text = decodeText(rawBuffer);
+    console.log("Decoded text first 100 chars:", JSON.stringify(text.substring(0, 100)));
     let sentences = splitIntoSentences(text);
 
     if (sentences.length === 0) {
@@ -72,6 +107,7 @@ Deno.serve(async (req) => {
     }
 
     // Limit sentences to avoid timeout
+    const MAX_SENTENCES = 100;
     const truncated = sentences.length > MAX_SENTENCES;
     if (truncated) {
       sentences = sentences.slice(0, MAX_SENTENCES);
