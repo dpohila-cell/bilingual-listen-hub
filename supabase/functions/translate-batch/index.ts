@@ -45,15 +45,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify ownership
+    // Verify ownership and get original language
     const { data: book } = await supabase
-      .from("books").select("id, user_id").eq("id", bookId).single();
+      .from("books").select("id, user_id, original_language").eq("id", bookId).single();
     if (!book || book.user_id !== user.id) {
       return new Response(JSON.stringify({ error: "Not found or not owned" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const originalLanguage = book.original_language || "en";
 
     // Get sentences that need translation (en_translation is null)
     const { data: sentences, error: fetchErr } = await supabase
@@ -80,8 +81,12 @@ Deno.serve(async (req) => {
 
     console.log(`Translating ${untranslated.length} sentences starting at order ${startOrder}`);
 
+    const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
+    const sourceLang = langNames[originalLanguage] || "Russian";
+
     // Translate
-    const prompt = `Translate each sentence below into English, Russian, and Swedish.
+    const prompt = `The following sentences are in ${sourceLang}. Translate each sentence into English, Russian, and Swedish.
+For the ${sourceLang} column, keep the original text as-is.
 Return ONLY a JSON array where each element has: {"en": "...", "ru": "...", "sv": "..."}
 No extra text, no markdown fences. Just the JSON array.
 

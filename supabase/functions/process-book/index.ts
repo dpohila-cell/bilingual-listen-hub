@@ -52,9 +52,14 @@ function decodeText(buffer: ArrayBuffer): string {
 
 async function translateBatch(
   sentences: string[],
-  lovableApiKey: string
+  lovableApiKey: string,
+  originalLanguage: string = "en"
 ): Promise<Array<{ en: string; ru: string; sv: string }>> {
-  const prompt = `Translate each sentence below into English, Russian, and Swedish.
+  const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
+  const sourceLang = langNames[originalLanguage] || "Russian";
+  
+  const prompt = `The following sentences are in ${sourceLang}. Translate each sentence into English, Russian, and Swedish.
+For the ${sourceLang} column, keep the original text as-is.
 Return ONLY a JSON array where each element has: {"en": "...", "ru": "...", "sv": "..."}
 No extra text, no markdown fences. Just the JSON array.
 
@@ -119,7 +124,7 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { bookId, filePath } = await req.json();
+    const { bookId, filePath, originalLanguage } = await req.json();
 
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -170,7 +175,7 @@ Deno.serve(async (req) => {
 
     // Step 2: Translate only the first 25 sentences
     const firstBatch = sentences.slice(0, 25);
-    const translations = await translateBatch(firstBatch, lovableApiKey);
+    const translations = await translateBatch(firstBatch, lovableApiKey, originalLanguage || "en");
 
     for (let j = 0; j < firstBatch.length; j++) {
       const t = translations[j] || { en: firstBatch[j], ru: firstBatch[j], sv: firstBatch[j] };
