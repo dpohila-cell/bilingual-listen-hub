@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { UniversalEdgeTTS } from "jsr:@edge-tts/universal";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,10 +8,11 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Microsoft Edge TTS voices for each language
 const VOICE_MAP: Record<string, string> = {
-  en: "JBFqnCBsd6RMkjVDRZzb", // George
-  ru: "onwK4e9ZLuTAKqWW03F9", // Daniel
-  sv: "TX3LPaxmHKxFdv7VOQHJ", // Liam
+  en: "en-US-GuyNeural",
+  ru: "ru-RU-DmitryNeural",
+  sv: "sv-SE-MattiasNeural",
 };
 
 serve(async (req) => {
@@ -32,7 +34,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify user
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -68,7 +69,7 @@ serve(async (req) => {
       });
     }
 
-    // Fetch all sentences for this book
+    // Fetch all sentences
     const { data: sentences, error: sentError } = await adminClient
       .from("sentences")
       .select("id, sentence_order, original_text, en_translation, ru_translation, sv_translation")
@@ -82,19 +83,10 @@ serve(async (req) => {
       });
     }
 
-    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
-    if (!ELEVENLABS_API_KEY) {
-      return new Response(JSON.stringify({ error: "ElevenLabs API key not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const voiceId = VOICE_MAP[language] || VOICE_MAP["en"];
-    const langField = `${language}_translation` as const;
-
-    // Check which audio files already exist
+    const voice = VOICE_MAP[language] || VOICE_MAP["en"];
     const storagePath = `${bookId}/${language}`;
+
+    // Check which files already exist
     const { data: existingFiles } = await adminClient.storage
       .from("audio")
       .list(storagePath);
@@ -103,7 +95,7 @@ serve(async (req) => {
       (existingFiles || []).map((f: { name: string }) => f.name)
     );
 
-    // Filter sentences that need audio generation
+    // Filter sentences that need generation
     const toGenerate = sentences.filter((s) => {
       const fileName = `${String(s.sentence_order).padStart(5, "0")}.mp3`;
       return !existingSet.has(fileName);
@@ -134,32 +126,11 @@ serve(async (req) => {
 
           if (!text || text.trim().length === 0) return;
 
-          const ttsResponse = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`,
-            {
-              method: "POST",
-              headers: {
-                "xi-api-key": ELEVENLABS_API_KEY,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                text,
-                model_id: "eleven_turbo_v2_5",
-                voice_settings: {
-                  stability: 0.6,
-                  similarity_boost: 0.75,
-                  speed: 1.0,
-                },
-              }),
-            }
-          );
+          // Use Edge TTS (free Microsoft voices)
+          const tts = new UniversalEdgeTTS(text, voice);
+          const result = await tts.synthesize();
+          const audioBuffer = await result.audio.arrayBuffer();
 
-          if (!ttsResponse.ok) {
-            const errText = await ttsResponse.text();
-            throw new Error(`TTS failed for sentence ${sentence.sentence_order}: ${ttsResponse.status} ${errText}`);
-          }
-
-          const audioBuffer = await ttsResponse.arrayBuffer();
           const fileName = `${String(sentence.sentence_order).padStart(5, "0")}.mp3`;
           const filePath = `${storagePath}/${fileName}`;
 
