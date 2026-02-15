@@ -15,7 +15,8 @@ function stripNullBytes(text: string): string {
 
 function stripHtmlTags(html: string): string {
   let clean = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  clean = clean.replace(/<\/(p|div|h[1-6]|li|br|tr|blockquote)>/gi, "\n");
+  clean = clean.replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n\n");
+  clean = clean.replace(/<(h[1-6])[^>]*>/gi, "\n\n");
   clean = clean.replace(/<br\s*\/?>/gi, "\n");
   clean = clean.replace(/<[^>]+>/g, "");
   clean = clean
@@ -45,18 +46,41 @@ function stripXmlTags(xml: string): string {
 }
 
 function splitIntoSentences(text: string): string[] {
-  const normalized = text
-    .replace(/\r\n/g, "\n")
-    .replace(/\n{2,}/g, " ")
-    .replace(/\n/g, " ")
-    .replace(/\t+/g, " ")
-    .replace(/ {2,}/g, " ")
-    .trim();
+  // Normalize line endings
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\t+/g, " ");
 
-  return normalized
-    .split(/(?<=[.!?…»"])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 5);
+  // Split into "blocks" by double-newline (paragraph breaks)
+  const blocks = normalized.split(/\n{2,}/);
+  const result: string[] = [];
+
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+
+    // Split block by single newlines into lines
+    const lines = trimmed.split(/\n/).map((l) => l.trim()).filter(Boolean);
+
+    for (const line of lines) {
+      // Short lines (< 80 chars) that don't end with sentence punctuation
+      // are likely headings, chapter titles, numbering — keep as separate phrases
+      const isHeadingLike =
+        line.length < 80 && !/[.!?…»"]$/.test(line);
+
+      if (isHeadingLike) {
+        result.push(line);
+      } else {
+        // Regular text: split into sentences by punctuation
+        const sentences = line
+          .replace(/ {2,}/g, " ")
+          .split(/(?<=[.!?…»"])\s+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 2);
+        result.push(...sentences);
+      }
+    }
+  }
+
+  return result.filter((s) => s.length > 1);
 }
 
 // ── Encoding detection for plain text ───────────────────────────
