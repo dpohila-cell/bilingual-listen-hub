@@ -323,7 +323,78 @@ function extractTextFromFb2(xml: string): string {
   return stripHtmlTags(bodyHtml).trim();
 }
 
-// ── AI-based text extraction (PDF, DOC, MOBI) ──────────────────
+// ── DOC (OLE2) native text extraction ───────────────────────────
+
+function extractTextFromDoc(bytes: Uint8Array): string {
+  // OLE2 Compound Binary File: extract raw text by scanning for readable text runs
+  // DOC files store text in the "WordDocument" stream, but parsing the full OLE2
+  // structure is complex. Instead, we extract all readable text sequences.
+  
+  const textParts: string[] = [];
+  
+  // Try to find UTF-16LE text runs (Word stores text as UTF-16LE)
+  let i = 0;
+  let currentRun: number[] = [];
+  
+  while (i < bytes.length - 1) {
+    const lo = bytes[i];
+    const hi = bytes[i + 1];
+    
+    // Check if this is a printable UTF-16LE character
+    if (hi === 0 && ((lo >= 0x20 && lo <= 0x7E) || lo === 0x0A || lo === 0x0D || lo === 0x09)) {
+      // ASCII range in UTF-16LE
+      currentRun.push(lo);
+      i += 2;
+    } else if (hi === 0x04 && lo >= 0x10 && lo <= 0x4F) {
+      // Cyrillic range U+0410-U+044F in UTF-16LE
+      currentRun.push(lo | (hi << 8));
+      i += 2;
+    } else if (hi === 0x04 && (lo === 0x01 || lo === 0x51)) {
+      // Cyrillic Ё (U+0401) and ё (U+0451)
+      currentRun.push(lo | (hi << 8));
+      i += 2;
+    } else if (hi >= 0x00 && hi <= 0x05 && lo >= 0x20) {
+      // Extended Latin/Cyrillic range
+      const cp = lo | (hi << 8);
+      if (cp >= 0x20) {
+        currentRun.push(cp);
+        i += 2;
+      } else {
+        if (currentRun.length > 10) {
+          const decoded = String.fromCharCode(...currentRun);
+          textParts.push(decoded);
+        }
+        currentRun = [];
+        i += 2;
+      }
+    } else {
+      // Non-text byte pair: flush current run if long enough
+      if (currentRun.length > 10) {
+        const decoded = String.fromCharCode(...currentRun);
+        textParts.push(decoded);
+      }
+      currentRun = [];
+      i += 2;
+    }
+  }
+  
+  // Flush last run
+  if (currentRun.length > 10) {
+    const decoded = String.fromCharCode(...currentRun);
+    textParts.push(decoded);
+  }
+  
+  // Join and clean up
+  let result = textParts.join("\n");
+  // Remove control characters except newlines/tabs
+  result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  // Collapse excessive whitespace
+  result = result.replace(/ {3,}/g, " ").replace(/\n{3,}/g, "\n\n");
+  
+  return result.trim();
+}
+
+
 
 async function extractTextWithAI(
   fileBytes: Uint8Array,
@@ -536,9 +607,9 @@ Deno.serve(async (req) => {
       console.log("Detected MOBI/AZW format, extracting...");
       text = extractTextFromMobi(bytes);
     } else if (isOle2(bytes) || ext === "doc") {
-      // ── DOC (OLE2): AI-based extraction ──
-      console.log("Detected DOC format, extracting via AI...");
-      text = await extractTextWithAI(bytes, "application/msword", lovableApiKey);
+      // ── DOC (OLE2): extract text natively from OLE2 compound document ──
+      console.log("Detected DOC format, extracting text from OLE2...");
+      text = extractTextFromDoc(bytes);
     } else {
       // Plain text or FB2
       text = decodeText(rawBuffer);
