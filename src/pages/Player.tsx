@@ -233,6 +233,19 @@ export default function Player() {
 
   const progressPercent = totalSentences > 0 ? ((currentIndex + 1) / totalSentences) * 100 : 0;
 
+  // Check if current sentence has actual translation for language2
+  const currentSentenceMissingTranslation = (() => {
+    if (!sentences[currentIndex]) return false;
+    const s = sentences[currentIndex];
+    const lang2 = settings.language2;
+    const translationMap: Record<Language, string> = {
+      en: s.enTranslation,
+      ru: s.ruTranslation,
+      sv: s.svTranslation,
+    };
+    return !translationMap[lang2];
+  })();
+
   return (
     <div className="flex flex-col gap-4 p-5 pt-10">
       <div className="flex items-center gap-3">
@@ -317,7 +330,7 @@ export default function Player() {
           activeLang={activeLang}
           sentenceNumber={currentIndex + 1}
           totalSentences={totalSentences}
-          isTranslating={isTranslating}
+          isTranslating={isTranslating || currentSentenceMissingTranslation}
         />
 
         {isTranslating && (
