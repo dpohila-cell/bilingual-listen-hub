@@ -8,14 +8,12 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { LanguagePicker } from '@/components/LanguagePicker';
-import type { Language } from '@/types';
 
 type UploadStep = 'select' | 'details' | 'processing' | 'done';
 
 const PROCESSING_STEPS = [
   'Uploading file…',
-  'Extracting text…',
+  'Extracting text & detecting language…',
   'Generating translations…',
   'Saving sentences…',
 ];
@@ -26,7 +24,6 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
-  const [originalLanguage, setOriginalLanguage] = useState<Language>('ru');
   const [newBookId, setNewBookId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -66,7 +63,7 @@ export default function UploadPage() {
           title: title || 'Untitled',
           author: author || '',
           file_path: filePath,
-          original_language: originalLanguage,
+          original_language: 'en', // will be auto-detected by edge function
           status: 'processing',
         })
         .select('id')
@@ -80,7 +77,7 @@ export default function UploadPage() {
       const { data: { session } } = await supabase.auth.getSession();
       try {
         const response = await supabase.functions.invoke('process-book', {
-          body: { bookId: book.id, filePath, originalLanguage },
+          body: { bookId: book.id, filePath },
           headers: { Authorization: `Bearer ${session?.access_token}` },
         });
 
@@ -150,11 +147,6 @@ export default function UploadPage() {
               placeholder="Author (optional)"
               value={author}
               onChange={(e) => setAuthor(e.target.value)}
-            />
-            <LanguagePicker
-              value={originalLanguage}
-              onChange={setOriginalLanguage}
-              label="Original language"
             />
             <p className="text-xs text-muted-foreground">
               File: {selectedFile?.name} ({((selectedFile?.size || 0) / 1024 / 1024).toFixed(1)} MB)
