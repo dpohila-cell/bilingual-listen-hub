@@ -6,6 +6,26 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function repairAndParseJson(raw: string): unknown {
+  // Strip control chars except newlines/tabs
+  let s = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  try { return JSON.parse(s); } catch { /* continue */ }
+
+  // Fix trailing commas
+  s = s.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+
+  // If truncated array/object, close it
+  if (s.startsWith("[") && !s.endsWith("]")) {
+    // Find last complete object
+    const lastClose = s.lastIndexOf("}");
+    if (lastClose > 0) s = s.substring(0, lastClose + 1) + "]";
+  }
+
+  try { return JSON.parse(s); } catch (e) {
+    throw new Error(`JSON repair failed: ${(e as Error).message}`);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -135,7 +155,7 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
       if (content.startsWith("```")) {
         content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
       }
-      translations = JSON.parse(content);
+      translations = repairAndParseJson(content) as Array<{ en: string; ru: string; sv: string }>;
     } catch (aiErr) {
       console.error("AI translation failed:", aiErr);
       return new Response(JSON.stringify({ error: "Translation failed", details: String(aiErr) }), {
