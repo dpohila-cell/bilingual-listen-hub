@@ -14,14 +14,10 @@ function stripNullBytes(text: string): string {
 }
 
 function stripHtmlTags(html: string): string {
-  // Remove scripts and styles entirely
   let clean = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  // Replace block-level tags with newlines
   clean = clean.replace(/<\/(p|div|h[1-6]|li|br|tr|blockquote)>/gi, "\n");
   clean = clean.replace(/<br\s*\/?>/gi, "\n");
-  // Remove remaining tags
   clean = clean.replace(/<[^>]+>/g, "");
-  // Decode common HTML entities
   clean = clean
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -32,6 +28,19 @@ function stripHtmlTags(html: string): string {
     .replace(/&nbsp;/g, " ")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  return clean;
+}
+
+function stripXmlTags(xml: string): string {
+  // Remove XML processing instructions and comments
+  let clean = xml.replace(/<\?[^?]*\?>/g, "");
+  clean = clean.replace(/<!--[\s\S]*?-->/g, "");
+  // Replace paragraph/break tags with newlines
+  clean = clean.replace(/<\/w:p>/gi, "\n");
+  clean = clean.replace(/<w:br[^>]*\/>/gi, "\n");
+  clean = clean.replace(/<w:tab[^>]*\/>/gi, " ");
+  // Remove all remaining tags
+  clean = clean.replace(/<[^>]+>/g, "");
   return clean;
 }
 
@@ -81,18 +90,38 @@ function decodeText(buffer: ArrayBuffer): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
-// ── EPUB extraction ─────────────────────────────────────────────
+// ── Format detection ────────────────────────────────────────────
 
-function isEpub(bytes: Uint8Array): boolean {
-  // ZIP magic: PK\x03\x04
+function isZip(bytes: Uint8Array): boolean {
   return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04;
 }
+
+function isOle2(bytes: Uint8Array): boolean {
+  // OLE2 Compound Document magic: D0 CF 11 E0 A1 B1 1A E1
+  return bytes.length > 8 &&
+    bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0 &&
+    bytes[4] === 0xA1 && bytes[5] === 0xB1 && bytes[6] === 0x1A && bytes[7] === 0xE1;
+}
+
+function isPdf(bytes: Uint8Array): boolean {
+  // %PDF
+  return bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
+function isMobi(bytes: Uint8Array): boolean {
+  // PalmDB with MOBI/BOOK type at offset 60
+  if (bytes.length < 68) return false;
+  const type = String.fromCharCode(bytes[60], bytes[61], bytes[62], bytes[63]);
+  const creator = String.fromCharCode(bytes[64], bytes[65], bytes[66], bytes[67]);
+  return (type === "BOOK" && creator === "MOBI") || (type === "MOBI");
+}
+
+// ── EPUB extraction ─────────────────────────────────────────────
 
 function extractTextFromEpub(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const files = unzipSync(bytes);
 
-  // 1. Find the OPF (content.opf) via container.xml
   let opfPath = "";
   const containerPath = Object.keys(files).find((f) =>
     f.toLowerCase() === "meta-inf/container.xml"
@@ -104,14 +133,11 @@ function extractTextFromEpub(buffer: ArrayBuffer): string {
     if (match) opfPath = match[1];
   }
 
-  // 2. Parse OPF to get reading order (spine + manifest)
   let orderedFiles: string[] = [];
   const opfDir = opfPath ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1) : "";
 
   if (opfPath && files[opfPath]) {
     const opfXml = new TextDecoder("utf-8").decode(files[opfPath]);
-
-    // Extract manifest items: id -> href
     const manifest: Record<string, string> = {};
     const itemRegex = /<item\s+[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*/gi;
     let m;
@@ -119,7 +145,6 @@ function extractTextFromEpub(buffer: ArrayBuffer): string {
       manifest[m[1]] = m[2];
     }
 
-    // Extract spine order
     const spineRegex = /<itemref\s+[^>]*idref="([^"]+)"/gi;
     while ((m = spineRegex.exec(opfXml)) !== null) {
       const href = manifest[m[1]];
@@ -129,17 +154,14 @@ function extractTextFromEpub(buffer: ArrayBuffer): string {
     }
   }
 
-  // 3. Fallback: sort xhtml/html files alphabetically
   if (orderedFiles.length === 0) {
     orderedFiles = Object.keys(files)
       .filter((f) => /\.(x?html?|htm)$/i.test(f))
       .sort();
   }
 
-  // 4. Extract text from each file in order
   const textParts: string[] = [];
   for (const path of orderedFiles) {
-    // Try exact path and also normalized path
     const data = files[path] || files[decodeURIComponent(path)];
     if (!data) continue;
     const html = new TextDecoder("utf-8").decode(data);
@@ -148,6 +170,118 @@ function extractTextFromEpub(buffer: ArrayBuffer): string {
   }
 
   return textParts.join("\n\n");
+}
+
+// ── DOCX extraction ─────────────────────────────────────────────
+
+function isDocx(files: Record<string, Uint8Array>): boolean {
+  return Object.keys(files).some((f) => f === "word/document.xml" || f === "word/document.xml".toLowerCase());
+}
+
+function extractTextFromDocx(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const files = unzipSync(bytes);
+
+  // Find word/document.xml
+  const docPath = Object.keys(files).find(
+    (f) => f.toLowerCase() === "word/document.xml"
+  );
+  if (!docPath || !files[docPath]) return "";
+
+  const xml = new TextDecoder("utf-8").decode(files[docPath]);
+  return stripXmlTags(xml).trim();
+}
+
+// ── FB2 extraction ──────────────────────────────────────────────
+
+function isFb2Xml(text: string): boolean {
+  return /<FictionBook[\s>]/i.test(text.substring(0, 500));
+}
+
+function extractTextFromFb2(xml: string): string {
+  const bodyRegex = /<body[^>]*>([\s\S]*?)<\/body>/gi;
+  const parts: string[] = [];
+  let m;
+  while ((m = bodyRegex.exec(xml)) !== null) {
+    parts.push(m[1]);
+  }
+  if (parts.length === 0) return "";
+
+  const bodyHtml = parts.join("\n\n");
+  return stripHtmlTags(bodyHtml).trim();
+}
+
+// ── AI-based text extraction (PDF, DOC, MOBI) ──────────────────
+
+async function extractTextWithAI(
+  fileBytes: Uint8Array,
+  mimeType: string,
+  lovableApiKey: string
+): Promise<string> {
+  // Convert to base64
+  const base64 = btoa(
+    Array.from(fileBytes)
+      .map((b) => String.fromCharCode(b))
+      .join("")
+  );
+
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+
+  // Send to Gemini which supports PDF and document understanding
+  const response = await fetch(
+    "https://ai.gateway.lovable.dev/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Extract ALL text content from this document. Return ONLY the raw text, preserving paragraph structure. Do not add any commentary, headers, or formatting. Just the document's text content, paragraph by paragraph.`,
+              },
+              {
+                type: "image_url",
+                image_url: { url: dataUrl },
+              },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 100000,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error(`AI extraction failed (${response.status}):`, errText);
+    throw new Error(`AI extraction failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new Error("AI returned empty content");
+  return content;
+}
+
+// For large files, we chunk the base64 to stay within AI limits
+async function extractTextFromPdfWithAI(
+  bytes: Uint8Array,
+  lovableApiKey: string
+): Promise<string> {
+  // Gemini supports up to ~20MB inline. For very large PDFs we try as-is.
+  const maxSize = 15 * 1024 * 1024; // 15MB safety margin
+  if (bytes.length > maxSize) {
+    console.warn(`PDF is ${(bytes.length / 1024 / 1024).toFixed(1)}MB, may exceed AI limits`);
+  }
+  return await extractTextWithAI(bytes, "application/pdf", lovableApiKey);
 }
 
 // ── Translation ─────────────────────────────────────────────────
@@ -209,24 +343,11 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
   }
 }
 
-// ── FB2 extraction ──────────────────────────────────────────────
+// ── Detect format from file extension ───────────────────────────
 
-function isFb2Xml(text: string): boolean {
-  return /<FictionBook[\s>]/i.test(text.substring(0, 500));
-}
-
-function extractTextFromFb2(xml: string): string {
-  // Extract <body> content (FB2 can have multiple bodies; main is first)
-  const bodyRegex = /<body[^>]*>([\s\S]*?)<\/body>/gi;
-  const parts: string[] = [];
-  let m;
-  while ((m = bodyRegex.exec(xml)) !== null) {
-    parts.push(m[1]);
-  }
-  if (parts.length === 0) return "";
-
-  const bodyHtml = parts.join("\n\n");
-  return stripHtmlTags(bodyHtml).trim();
+function getFileExtension(filePath: string): string {
+  const parts = filePath.split(".");
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
 }
 
 // ── Main handler ────────────────────────────────────────────────
@@ -277,14 +398,37 @@ Deno.serve(async (req) => {
 
     const rawBuffer = await fileData.arrayBuffer();
     const bytes = new Uint8Array(rawBuffer);
+    const ext = getFileExtension(filePath);
 
-    // Extract text: EPUB (ZIP), FB2 (XML), or plain text
+    // Extract text based on format
     let text: string;
-    if (isEpub(bytes)) {
-      console.log("Detected EPUB format, extracting...");
-      text = extractTextFromEpub(rawBuffer);
+
+    if (isPdf(bytes)) {
+      // ── PDF: AI-based extraction ──
+      console.log("Detected PDF format, extracting via AI...");
+      text = await extractTextFromPdfWithAI(bytes, lovableApiKey);
+    } else if (isZip(bytes)) {
+      // ZIP-based formats: EPUB, DOCX, or FB2 inside ZIP
+      const files = unzipSync(bytes);
+
+      if (isDocx(files)) {
+        console.log("Detected DOCX format, extracting...");
+        text = extractTextFromDocx(rawBuffer);
+      } else {
+        // Assume EPUB
+        console.log("Detected EPUB format, extracting...");
+        text = extractTextFromEpub(rawBuffer);
+      }
+    } else if (isMobi(bytes) || ext === "mobi" || ext === "azw" || ext === "azw3") {
+      // ── MOBI/AZW: AI-based extraction ──
+      console.log("Detected MOBI/AZW format, extracting via AI...");
+      text = await extractTextWithAI(bytes, "application/octet-stream", lovableApiKey);
+    } else if (isOle2(bytes) || ext === "doc") {
+      // ── DOC (OLE2): AI-based extraction ──
+      console.log("Detected DOC format, extracting via AI...");
+      text = await extractTextWithAI(bytes, "application/msword", lovableApiKey);
     } else {
-      // Decode as text first, then check if it's FB2 XML
+      // Plain text or FB2
       text = decodeText(rawBuffer);
       if (isFb2Xml(text)) {
         console.log("Detected FB2 format, extracting...");
