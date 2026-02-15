@@ -557,6 +557,46 @@ Deno.serve(async (req) => {
 
     console.log(`Total sentences found: ${sentences.length}`);
 
+    // ── Auto-detect language from first ~10 sentences ──
+    const sampleText = sentences.slice(0, 10).join(" ");
+    let detectedLanguage = "en"; // fallback
+    try {
+      const detectResponse = await fetch(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${lovableApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-lite",
+            messages: [{
+              role: "user",
+              content: `Detect the language of this text. Reply with ONLY the ISO 639-1 code (e.g. "en", "ru", "sv"). Nothing else.\n\n${sampleText.substring(0, 500)}`,
+            }],
+            temperature: 0,
+            max_tokens: 5,
+          }),
+        }
+      );
+      if (detectResponse.ok) {
+        const detectData = await detectResponse.json();
+        const code = detectData.choices?.[0]?.message?.content?.trim().toLowerCase().replace(/[^a-z]/g, "");
+        if (code && ["en", "ru", "sv"].includes(code)) {
+          detectedLanguage = code;
+        } else if (code) {
+          console.log(`Detected unsupported language: ${code}, defaulting to en`);
+        }
+      }
+    } catch (e) {
+      console.error("Language detection failed, defaulting to en:", e);
+    }
+    console.log(`Detected language: ${detectedLanguage}`);
+
+    // Update book with detected language
+    await supabase.from("books").update({ original_language: detectedLanguage }).eq("id", bookId);
+
     // Delete any existing sentences for this book (in case of retry)
     await supabase.from("sentences").delete().eq("book_id", bookId);
 
@@ -580,7 +620,7 @@ Deno.serve(async (req) => {
 
     // Step 2: Translate only the first 25 sentences
     const firstBatch = sentences.slice(0, 25);
-    const translations = await translateBatch(firstBatch, lovableApiKey, originalLanguage || "en");
+    const translations = await translateBatch(firstBatch, lovableApiKey, detectedLanguage);
 
     for (let j = 0; j < firstBatch.length; j++) {
       const t = translations[j] || { en: firstBatch[j], ru: firstBatch[j], sv: firstBatch[j] };
