@@ -136,11 +136,11 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     }
   }, [bookId]);
 
-  const abortRef = useRef(false);
+  const playGenRef = useRef(0);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const stopCurrent = useCallback(() => {
-    abortRef.current = true;
+    playGenRef.current += 1;
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
       currentAudioRef.current.currentTime = 0;
@@ -148,11 +148,11 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     }
   }, []);
 
-  const wait = useCallback((ms: number) => {
+  const wait = useCallback((ms: number, gen: number) => {
     return new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, ms);
       const checkAbort = setInterval(() => {
-        if (abortRef.current) {
+        if (playGenRef.current !== gen) {
           clearTimeout(timer);
           clearInterval(checkAbort);
           resolve();
@@ -174,8 +174,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   }, [currentIndex, bookId, sentences, settings.language1, settings.language2]);
 
   const playSentence = useCallback(
-    async (index: number) => {
-      if (abortRef.current || index >= sentences.length || !bookId) {
+    async (index: number, gen: number) => {
+      if (playGenRef.current !== gen || index >= sentences.length || !bookId) {
         setIsPlaying(false);
         setActiveLang(null);
         setIsLoading(false);
@@ -191,33 +191,28 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const activeLang2: 1 | 2 = settings.playbackOrder === '1-2' ? 2 : 1;
 
       try {
-        // Play language 1
         setActiveLang(activeLang1);
         setIsLoading(false);
         const audio1 = prefetchAudio(bookId, lang1, sentence.sentenceOrder);
         currentAudioRef.current = audio1;
         await playAudioElement(audio1, settings.playbackSpeed);
-        if (abortRef.current) return;
+        if (playGenRef.current !== gen) return;
 
-        // Pause between languages
         setActiveLang(null);
-        await wait(settings.pauseDuration * 1000);
-        if (abortRef.current) return;
+        await wait(settings.pauseDuration * 1000, gen);
+        if (playGenRef.current !== gen) return;
 
-        // Play language 2
         setActiveLang(activeLang2);
         const audio2 = prefetchAudio(bookId, lang2, sentence.sentenceOrder);
         currentAudioRef.current = audio2;
         await playAudioElement(audio2, settings.playbackSpeed);
-        if (abortRef.current) return;
+        if (playGenRef.current !== gen) return;
 
-        // Pause before next sentence
         setActiveLang(null);
-        await wait(settings.pauseDuration * 500);
-        if (abortRef.current) return;
+        await wait(settings.pauseDuration * 500, gen);
+        if (playGenRef.current !== gen) return;
 
-        // Move to next sentence
-        playSentence(index + 1);
+        playSentence(index + 1, gen);
       } catch (err) {
         console.error('Playback error:', err);
         setIsPlaying(false);
@@ -229,9 +224,9 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   );
 
   const play = useCallback(() => {
-    abortRef.current = false;
+    const gen = ++playGenRef.current;
     setIsPlaying(true);
-    playSentence(currentIndex);
+    playSentence(currentIndex, gen);
   }, [currentIndex, playSentence]);
 
   const pause = useCallback(() => {
@@ -252,8 +247,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     const next = Math.min(currentIndex + 1, sentences.length - 1);
     setCurrentIndex(next);
     if (isPlaying) {
-      abortRef.current = false;
-      playSentence(next);
+      const gen = playGenRef.current;
+      playSentence(next, gen);
     }
   }, [stopCurrent, currentIndex, sentences.length, isPlaying, playSentence]);
 
@@ -263,8 +258,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     const prev = Math.max(currentIndex - 1, 0);
     setCurrentIndex(prev);
     if (isPlaying) {
-      abortRef.current = false;
-      playSentence(prev);
+      const gen = playGenRef.current;
+      playSentence(prev, gen);
     }
   }, [stopCurrent, currentIndex, isPlaying, playSentence]);
 
@@ -274,14 +269,14 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     setActiveLang(null);
     setCurrentIndex(clamped);
     if (isPlaying) {
-      abortRef.current = false;
-      playSentence(clamped);
+      const gen = playGenRef.current;
+      playSentence(clamped, gen);
     }
   }, [stopCurrent, sentences.length, isPlaying, playSentence]);
 
   useEffect(() => {
     return () => {
-      abortRef.current = true;
+      playGenRef.current += 1;
       if (currentAudioRef.current) {
         currentAudioRef.current.pause();
         currentAudioRef.current = null;
