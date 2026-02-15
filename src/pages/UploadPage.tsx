@@ -45,7 +45,9 @@ export default function UploadPage() {
 
     try {
       // 1. Upload file to storage as binary (preserve encoding)
-      const filePath = `${user.id}/${Date.now()}-${selectedFile.name}`;
+      // Sanitize filename: replace non-ASCII and special chars with underscores
+      const safeFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${user.id}/${Date.now()}-${safeFileName}`;
       const fileBuffer = await selectedFile.arrayBuffer();
       const { error: uploadError } = await supabase.storage
         .from('ebooks')
