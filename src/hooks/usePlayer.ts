@@ -50,46 +50,59 @@ function getAudioUrl(bookId: string, language: Language, sentenceOrder: number):
   return data.publicUrl;
 }
 
-// Prefetch and cache audio elements
-const audioCache = new Map<string, HTMLAudioElement>();
+// Prefetch URL cache (no longer caches Audio elements — we reuse unlocked ones)
+const urlCache = new Map<string, string>();
 
 export function clearAudioCache() {
-  audioCache.forEach((audio) => {
-    audio.pause();
-    audio.src = '';
-  });
-  audioCache.clear();
+  urlCache.clear();
 }
 
-function prefetchAudio(bookId: string, language: Language, sentenceOrder: number): HTMLAudioElement {
+function getOrCacheUrl(bookId: string, language: Language, sentenceOrder: number): string {
   const key = `${bookId}/${language}/${sentenceOrder}`;
-  if (audioCache.has(key)) return audioCache.get(key)!;
-
+  if (urlCache.has(key)) return urlCache.get(key)!;
   const url = getAudioUrl(bookId, language, sentenceOrder);
-  // Add cache-busting param to force reload after regeneration
   const bustUrl = `${url}?t=${Date.now()}`;
-  const audio = new Audio();
-  audio.preload = 'auto';
-  audio.src = bustUrl;
-  audioCache.set(key, audio);
-  return audio;
+  urlCache.set(key, bustUrl);
+  return bustUrl;
 }
 
-function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<'played' | 'skipped'> {
+// Two reusable audio elements — unlocked once from user gesture on iOS
+let unlockedAudioA: HTMLAudioElement | null = null;
+let unlockedAudioB: HTMLAudioElement | null = null;
+
+/** Call this synchronously inside a click/tap handler to unlock audio on iOS */
+export function unlockAudioForIOS() {
+  if (!unlockedAudioA) {
+    unlockedAudioA = new Audio();
+    unlockedAudioA.preload = 'auto';
+  }
+  if (!unlockedAudioB) {
+    unlockedAudioB = new Audio();
+    unlockedAudioB.preload = 'auto';
+  }
+  // Silent play to unlock — iOS requires this from gesture context
+  unlockedAudioA.play().catch(() => {});
+  unlockedAudioA.pause();
+  unlockedAudioB.play().catch(() => {});
+  unlockedAudioB.pause();
+}
+
+function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
+  if (slot === 'A') {
+    if (!unlockedAudioA) { unlockedAudioA = new Audio(); unlockedAudioA.preload = 'auto'; }
+    return unlockedAudioA;
+  }
+  if (!unlockedAudioB) { unlockedAudioB = new Audio(); unlockedAudioB.preload = 'auto'; }
+  return unlockedAudioB;
+}
+
+function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
     audio.playbackRate = speed;
     audio.currentTime = 0;
 
-    const onEnded = () => {
-      cleanup();
-      resolve('played');
-    };
-    const onError = () => {
-      cleanup();
-      // Audio file doesn't exist or can't be played — skip gracefully
-      console.warn('Audio not available, skipping');
-      resolve('skipped');
-    };
+    const onEnded = () => { cleanup(); resolve('played'); };
+    const onError = () => { cleanup(); console.warn('Audio not available, skipping'); resolve('skipped'); };
     const cleanup = () => {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
@@ -97,6 +110,7 @@ function playAudioElement(audio: HTMLAudioElement, speed: number): Promise<'play
 
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
+    audio.src = url;
     audio.play().catch(() => resolve('skipped'));
   });
 }
@@ -161,15 +175,14 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     });
   }, []);
 
-  // Prefetch upcoming sentences
+  // Prefetch upcoming sentence URLs
   useEffect(() => {
     if (!bookId || sentences.length === 0) return;
     const { language1, language2 } = settings;
-    // Prefetch current + next 3 sentences for both languages
     for (let i = currentIndex; i < Math.min(currentIndex + 4, sentences.length); i++) {
       const order = sentences[i].sentenceOrder;
-      prefetchAudio(bookId, language1, order);
-      prefetchAudio(bookId, language2, order);
+      getOrCacheUrl(bookId, language1, order);
+      getOrCacheUrl(bookId, language2, order);
     }
   }, [currentIndex, bookId, sentences, settings.language1, settings.language2]);
 
@@ -191,11 +204,13 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const activeLang2: 1 | 2 = settings.playbackOrder === '1-2' ? 2 : 1;
 
       try {
+        // Use pre-unlocked audio elements (slot A for lang1, slot B for lang2)
         setActiveLang(activeLang1);
         setIsLoading(false);
-        const audio1 = prefetchAudio(bookId, lang1, sentence.sentenceOrder);
-        currentAudioRef.current = audio1;
-        await playAudioElement(audio1, settings.playbackSpeed);
+        const audioA = getUnlockedAudio('A');
+        const url1 = getOrCacheUrl(bookId, lang1, sentence.sentenceOrder);
+        currentAudioRef.current = audioA;
+        await playAudioElement(audioA, url1, settings.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
@@ -203,9 +218,10 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         if (playGenRef.current !== gen) return;
 
         setActiveLang(activeLang2);
-        const audio2 = prefetchAudio(bookId, lang2, sentence.sentenceOrder);
-        currentAudioRef.current = audio2;
-        await playAudioElement(audio2, settings.playbackSpeed);
+        const audioB = getUnlockedAudio('B');
+        const url2 = getOrCacheUrl(bookId, lang2, sentence.sentenceOrder);
+        currentAudioRef.current = audioB;
+        await playAudioElement(audioB, url2, settings.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
@@ -224,6 +240,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   );
 
   const play = useCallback(() => {
+    unlockAudioForIOS(); // Must be called synchronously in gesture context
     const gen = ++playGenRef.current;
     setIsPlaying(true);
     playSentence(currentIndex, gen);
