@@ -1,10 +1,39 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { unzipSync } from "https://esm.sh/fflate@0.8.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+// ── Text utilities ──────────────────────────────────────────────
+
+function stripNullBytes(text: string): string {
+  return text.replace(/\0/g, "");
+}
+
+function stripHtmlTags(html: string): string {
+  // Remove scripts and styles entirely
+  let clean = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  // Replace block-level tags with newlines
+  clean = clean.replace(/<\/(p|div|h[1-6]|li|br|tr|blockquote)>/gi, "\n");
+  clean = clean.replace(/<br\s*\/?>/gi, "\n");
+  // Remove remaining tags
+  clean = clean.replace(/<[^>]+>/g, "");
+  // Decode common HTML entities
+  clean = clean
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  return clean;
+}
 
 function splitIntoSentences(text: string): string[] {
   const normalized = text
@@ -20,6 +49,8 @@ function splitIntoSentences(text: string): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 5);
 }
+
+// ── Encoding detection for plain text ───────────────────────────
 
 function decodeText(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -43,12 +74,83 @@ function decodeText(buffer: ArrayBuffer): string {
     const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const questionMarkRatio = (utf8.match(/\uFFFD/g) || []).length / utf8.length;
     if (questionMarkRatio < 0.1) return utf8;
-  } catch {}
+  } catch { /* fallback */ }
 
-  try { return new TextDecoder("windows-1251").decode(bytes); } catch {}
-  try { return new TextDecoder("koi8-r").decode(bytes); } catch {}
+  try { return new TextDecoder("windows-1251").decode(bytes); } catch { /* fallback */ }
+  try { return new TextDecoder("koi8-r").decode(bytes); } catch { /* fallback */ }
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
+
+// ── EPUB extraction ─────────────────────────────────────────────
+
+function isEpub(bytes: Uint8Array): boolean {
+  // ZIP magic: PK\x03\x04
+  return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04;
+}
+
+function extractTextFromEpub(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const files = unzipSync(bytes);
+
+  // 1. Find the OPF (content.opf) via container.xml
+  let opfPath = "";
+  const containerPath = Object.keys(files).find((f) =>
+    f.toLowerCase() === "meta-inf/container.xml"
+  );
+
+  if (containerPath) {
+    const containerXml = new TextDecoder("utf-8").decode(files[containerPath]);
+    const match = containerXml.match(/full-path="([^"]+\.opf)"/i);
+    if (match) opfPath = match[1];
+  }
+
+  // 2. Parse OPF to get reading order (spine + manifest)
+  let orderedFiles: string[] = [];
+  const opfDir = opfPath ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1) : "";
+
+  if (opfPath && files[opfPath]) {
+    const opfXml = new TextDecoder("utf-8").decode(files[opfPath]);
+
+    // Extract manifest items: id -> href
+    const manifest: Record<string, string> = {};
+    const itemRegex = /<item\s+[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*/gi;
+    let m;
+    while ((m = itemRegex.exec(opfXml)) !== null) {
+      manifest[m[1]] = m[2];
+    }
+
+    // Extract spine order
+    const spineRegex = /<itemref\s+[^>]*idref="([^"]+)"/gi;
+    while ((m = spineRegex.exec(opfXml)) !== null) {
+      const href = manifest[m[1]];
+      if (href) {
+        orderedFiles.push(opfDir + href);
+      }
+    }
+  }
+
+  // 3. Fallback: sort xhtml/html files alphabetically
+  if (orderedFiles.length === 0) {
+    orderedFiles = Object.keys(files)
+      .filter((f) => /\.(x?html?|htm)$/i.test(f))
+      .sort();
+  }
+
+  // 4. Extract text from each file in order
+  const textParts: string[] = [];
+  for (const path of orderedFiles) {
+    // Try exact path and also normalized path
+    const data = files[path] || files[decodeURIComponent(path)];
+    if (!data) continue;
+    const html = new TextDecoder("utf-8").decode(data);
+    const text = stripHtmlTags(html).trim();
+    if (text.length > 0) textParts.push(text);
+  }
+
+  return textParts.join("\n\n");
+}
+
+// ── Translation ─────────────────────────────────────────────────
 
 async function translateBatch(
   sentences: string[],
@@ -57,12 +159,12 @@ async function translateBatch(
 ): Promise<Array<{ en: string; ru: string; sv: string }>> {
   const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
   const sourceLang = langNames[originalLanguage] || "Russian";
-  
+
   const prompt = `I have sentences written in ${sourceLang}. I need you to translate them.
 
 IMPORTANT: The "en" field MUST contain the ENGLISH translation. The "ru" field MUST contain the RUSSIAN text. The "sv" field MUST contain the SWEDISH translation.
-${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ''}
-${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ''}
+${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ""}
+${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ""}
 
 Return ONLY a JSON array where each element has: {"en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
 No extra text, no markdown fences. Just the JSON array.
@@ -88,14 +190,14 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
     );
 
     if (!aiResponse.ok) {
-      console.error("AI gateway error in process-book:", aiResponse.status, await aiResponse.text());
+      console.error("AI gateway error:", aiResponse.status, await aiResponse.text());
       return sentences.map((s) => ({ en: s, ru: s, sv: s }));
     }
 
     const aiData = await aiResponse.json();
     let content = aiData.choices?.[0]?.message?.content?.trim();
     if (!content) {
-      console.error("No content from AI in process-book");
+      console.error("No content from AI");
       return sentences.map((s) => ({ en: s, ru: s, sv: s }));
     }
     if (content.startsWith("```")) {
@@ -106,6 +208,8 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
     return sentences.map((s) => ({ en: s, ru: s, sv: s }));
   }
 }
+
+// ── Main handler ────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -152,7 +256,20 @@ Deno.serve(async (req) => {
     }
 
     const rawBuffer = await fileData.arrayBuffer();
-    const text = decodeText(rawBuffer);
+    const bytes = new Uint8Array(rawBuffer);
+
+    // Extract text: EPUB (ZIP) or plain text
+    let text: string;
+    if (isEpub(bytes)) {
+      console.log("Detected EPUB format, extracting...");
+      text = extractTextFromEpub(rawBuffer);
+    } else {
+      text = decodeText(rawBuffer);
+    }
+
+    // Strip null bytes that break Postgres
+    text = stripNullBytes(text);
+
     const sentences = splitIntoSentences(text);
 
     if (sentences.length === 0) {
@@ -175,7 +292,7 @@ Deno.serve(async (req) => {
       const rows = batch.map((s, j) => ({
         book_id: bookId,
         sentence_order: i + j + 1,
-        original_text: s,
+        original_text: stripNullBytes(s),
         en_translation: null,
         ru_translation: null,
         sv_translation: null,
@@ -208,7 +325,7 @@ Deno.serve(async (req) => {
       .update({ status: "ready", sentence_count: sentences.length })
       .eq("id", bookId);
 
-    // Fire-and-forget: translate ALL remaining sentences in the background
+    // Fire-and-forget: translate remaining sentences in the background
     if (sentences.length > 25) {
       console.log(`Triggering background translation for remaining ${sentences.length - 25} sentences`);
       try {
@@ -227,7 +344,6 @@ Deno.serve(async (req) => {
         console.log(`translate-all triggered, status: ${bgResponse.status}`);
       } catch (bgErr) {
         console.error("Failed to trigger background translation:", bgErr);
-        // Non-fatal: player can still trigger on-demand translation as fallback
       }
     }
 
