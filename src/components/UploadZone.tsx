@@ -2,7 +2,7 @@ import { Upload, FileText } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ACCEPTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw', '.azw3', '.fb2', '.txt', '.docx'];
+const ACCEPTED_FORMATS = ['.epub', '.fb2', '.txt', '.docx', '.pdf', '.mobi', '.azw', '.azw3'];
 
 interface UploadZoneProps {
   onFileSelect: (file: File) => void;
@@ -86,7 +86,7 @@ export function UploadZone({ onFileSelect }: UploadZoneProps) {
               <div className="text-center">
                 <p className="text-sm font-medium">Drop your eBook here</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  EPUB, PDF, MOBI, AZW, FB2, TXT, DOCX
+                  EPUB, FB2, TXT, DOCX, PDF, MOBI, AZW
                 </p>
               </div>
             </motion.div>

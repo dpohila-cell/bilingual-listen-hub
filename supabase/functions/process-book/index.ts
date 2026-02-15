@@ -209,6 +209,26 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
   }
 }
 
+// ── FB2 extraction ──────────────────────────────────────────────
+
+function isFb2Xml(text: string): boolean {
+  return /<FictionBook[\s>]/i.test(text.substring(0, 500));
+}
+
+function extractTextFromFb2(xml: string): string {
+  // Extract <body> content (FB2 can have multiple bodies; main is first)
+  const bodyRegex = /<body[^>]*>([\s\S]*?)<\/body>/gi;
+  const parts: string[] = [];
+  let m;
+  while ((m = bodyRegex.exec(xml)) !== null) {
+    parts.push(m[1]);
+  }
+  if (parts.length === 0) return "";
+
+  const bodyHtml = parts.join("\n\n");
+  return stripHtmlTags(bodyHtml).trim();
+}
+
 // ── Main handler ────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -258,13 +278,18 @@ Deno.serve(async (req) => {
     const rawBuffer = await fileData.arrayBuffer();
     const bytes = new Uint8Array(rawBuffer);
 
-    // Extract text: EPUB (ZIP) or plain text
+    // Extract text: EPUB (ZIP), FB2 (XML), or plain text
     let text: string;
     if (isEpub(bytes)) {
       console.log("Detected EPUB format, extracting...");
       text = extractTextFromEpub(rawBuffer);
     } else {
+      // Decode as text first, then check if it's FB2 XML
       text = decodeText(rawBuffer);
+      if (isFb2Xml(text)) {
+        console.log("Detected FB2 format, extracting...");
+        text = extractTextFromFb2(text);
+      }
     }
 
     // Strip null bytes that break Postgres
