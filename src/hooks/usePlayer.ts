@@ -96,13 +96,28 @@ function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
   return unlockedAudioB;
 }
 
-function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): Promise<'played' | 'skipped'> {
+function playAudioElement(audio: HTMLAudioElement, url: string, speed: number, retries = 3): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
     audio.playbackRate = speed;
     audio.currentTime = 0;
 
+    let attemptCount = 0;
+
     const onEnded = () => { cleanup(); resolve('played'); };
-    const onError = () => { cleanup(); console.warn('Audio not available, skipping'); resolve('skipped'); };
+    const onError = () => {
+      attemptCount++;
+      if (attemptCount < retries) {
+        // Retry after a short delay — audio file may still be generating
+        setTimeout(() => {
+          audio.src = url.includes('?') ? `${url.split('?')[0]}?t=${Date.now()}` : `${url}?t=${Date.now()}`;
+          audio.play().catch(() => { cleanup(); console.warn('Audio not available, skipping'); resolve('skipped'); });
+        }, 1500);
+      } else {
+        cleanup();
+        console.warn('Audio not available after retries, skipping');
+        resolve('skipped');
+      }
+    };
     const cleanup = () => {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
