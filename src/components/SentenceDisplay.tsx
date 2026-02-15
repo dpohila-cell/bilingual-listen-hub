@@ -1,5 +1,6 @@
 import { Language, LANGUAGE_FLAGS, LANGUAGE_LABELS } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 
 interface SentenceDisplayProps {
   text1: string;
@@ -91,7 +92,7 @@ export function SentenceDisplay({
           </div>
           <p className="font-serif text-lg leading-relaxed">
             {isTranslating
-              ? <span className="text-muted-foreground italic">Подождите, переводится…</span>
+              ? <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></span>
               : text2 || <span className="text-muted-foreground italic">Translating…</span>}
           </p>
         </motion.div>
