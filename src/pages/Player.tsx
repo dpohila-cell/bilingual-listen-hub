@@ -128,9 +128,9 @@ export default function Player() {
       // Translate the batch starting at this order
       const batchStart = Math.max(1, sentenceOrder - (sentenceOrder % TRANSLATE_BATCH_SIZE));
       await translateRange(batchStart);
-      // Only refetch if this is still the latest request
+      // Force refetch and wait for it to complete so UI updates immediately
       if (translateAndRefetchRef.current === gen) {
-        await queryClient.invalidateQueries({ queryKey: ['sentences', bookId] });
+        await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
       }
     } finally {
       if (translateAndRefetchRef.current === gen) {
