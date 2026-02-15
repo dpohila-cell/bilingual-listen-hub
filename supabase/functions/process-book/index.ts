@@ -589,7 +589,36 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { bookId, filePath, originalLanguage } = await req.json();
+    const { bookId, filePath } = await req.json();
+
+    if (!bookId || !filePath) {
+      return new Response(JSON.stringify({ error: "Missing bookId or filePath" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate book ownership
+    const { data: book, error: bookError } = await supabase
+      .from("books")
+      .select("id, user_id, file_path")
+      .eq("id", bookId)
+      .single();
+
+    if (bookError || !book || book.user_id !== user.id) {
+      return new Response(JSON.stringify({ error: "Book not found or not owned" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate filePath matches the book's stored path and belongs to user
+    if (book.file_path !== filePath || !filePath.startsWith(`${user.id}/`)) {
+      return new Response(JSON.stringify({ error: "Invalid file path" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
