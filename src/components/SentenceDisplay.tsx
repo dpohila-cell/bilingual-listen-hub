@@ -9,6 +9,7 @@ interface SentenceDisplayProps {
   activeLang: 1 | 2 | null;
   sentenceNumber: number;
   totalSentences: number;
+  isTranslating?: boolean;
 }
 
 export function SentenceDisplay({
@@ -19,6 +20,7 @@ export function SentenceDisplay({
   activeLang,
   sentenceNumber,
   totalSentences,
+  isTranslating,
 }: SentenceDisplayProps) {
   return (
     <div className="flex flex-col gap-6 px-2">
@@ -88,7 +90,9 @@ export function SentenceDisplay({
             )}
           </div>
           <p className="font-serif text-lg leading-relaxed">
-            {text2 || <span className="text-muted-foreground italic">Translating…</span>}
+            {isTranslating
+              ? <span className="text-muted-foreground italic">Подождите, переводится…</span>
+              : text2 || <span className="text-muted-foreground italic">Translating…</span>}
           </p>
         </motion.div>
       </AnimatePresence>
