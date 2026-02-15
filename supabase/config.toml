@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.translate-batch]
 verify_jwt = false
+
+[functions.translate-all]
+verify_jwt = false
+
+[functions.tts]
+verify_jwt = false
+
+[functions.tts-preview]
+verify_jwt = false
