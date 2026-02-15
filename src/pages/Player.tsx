@@ -316,6 +316,7 @@ export default function Player() {
           activeLang={activeLang}
           sentenceNumber={currentIndex + 1}
           totalSentences={totalSentences}
+          isTranslating={isTranslating}
         />
 
         {isTranslating && (
