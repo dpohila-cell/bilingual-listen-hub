@@ -109,11 +109,117 @@ function isPdf(bytes: Uint8Array): boolean {
 }
 
 function isMobi(bytes: Uint8Array): boolean {
-  // PalmDB with MOBI/BOOK type at offset 60
   if (bytes.length < 68) return false;
   const type = String.fromCharCode(bytes[60], bytes[61], bytes[62], bytes[63]);
   const creator = String.fromCharCode(bytes[64], bytes[65], bytes[66], bytes[67]);
   return (type === "BOOK" && creator === "MOBI") || (type === "MOBI");
+}
+
+// ── MOBI/PalmDoc extraction ─────────────────────────────────────
+
+function readUint16BE(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] << 8) | bytes[offset + 1];
+}
+
+function readUint32BE(bytes: Uint8Array, offset: number): number {
+  return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+}
+
+function palmDocDecompress(data: Uint8Array): Uint8Array {
+  const output: number[] = [];
+  let i = 0;
+  while (i < data.length) {
+    const byte = data[i++];
+    if (byte === 0) {
+      output.push(0);
+    } else if (byte >= 1 && byte <= 8) {
+      // Copy next 'byte' bytes as-is
+      for (let j = 0; j < byte && i < data.length; j++) {
+        output.push(data[i++]);
+      }
+    } else if (byte >= 0x80) {
+      // LZ77 distance-length pair
+      if (i >= data.length) break;
+      const next = data[i++];
+      const dist = ((byte << 8) | next) >> 3 & 0x7FF;
+      const len = (next & 0x07) + 3;
+      for (let j = 0; j < len; j++) {
+        if (output.length - dist >= 0) {
+          output.push(output[output.length - dist]);
+        }
+      }
+    } else if (byte >= 0x09 && byte <= 0x7F) {
+      output.push(byte);
+    } else {
+      // 0x01-0x08 handled above; space + char
+      output.push(0x20);
+      output.push(byte ^ 0x80);
+    }
+  }
+  return new Uint8Array(output);
+}
+
+function extractTextFromMobi(bytes: Uint8Array): string {
+  // PalmDB header: 78 bytes
+  // Number of records at offset 76
+  const numRecords = readUint16BE(bytes, 76);
+  if (numRecords < 2) return "";
+
+  // Record info list starts at offset 78, each entry is 8 bytes (offset:4, attrs:1, id:3)
+  const recordOffsets: number[] = [];
+  for (let i = 0; i < numRecords; i++) {
+    recordOffsets.push(readUint32BE(bytes, 78 + i * 8));
+  }
+
+  // Record 0 is the PalmDoc/MOBI header
+  const rec0Start = recordOffsets[0];
+  const compression = readUint16BE(bytes, rec0Start); // 1=none, 2=PalmDoc, 17480=HUFF/CDIC
+  const textRecordCount = readUint16BE(bytes, rec0Start + 8);
+  const textEncoding = readUint32BE(bytes, rec0Start + 28); // In MOBI header: 0x10 offset from rec0 + 16 = MOBI magic
+
+  // Check MOBI magic at rec0Start + 16
+  const hasMobiHeader = bytes.length > rec0Start + 20 &&
+    bytes[rec0Start + 16] === 0x4D && bytes[rec0Start + 17] === 0x4F &&
+    bytes[rec0Start + 18] === 0x42 && bytes[rec0Start + 19] === 0x49;
+
+  // Encoding: read from MOBI header at rec0Start + 28 (relative to MOBI start at rec0Start + 16)
+  // MOBI header offset 28 = encoding (65001=UTF-8, 1252=CP1252)
+  let encoding = "utf-8";
+  if (hasMobiHeader) {
+    const mobiEncoding = readUint32BE(bytes, rec0Start + 16 + 28);
+    if (mobiEncoding === 1252) encoding = "windows-1252";
+  }
+
+  // Extract text records (records 1..textRecordCount)
+  const actualTextRecords = Math.min(textRecordCount, numRecords - 1);
+  const textParts: string[] = [];
+
+  for (let i = 1; i <= actualTextRecords; i++) {
+    const start = recordOffsets[i];
+    const end = i + 1 < numRecords ? recordOffsets[i + 1] : bytes.length;
+    const recordData = bytes.slice(start, end);
+
+    let decompressed: Uint8Array;
+    if (compression === 2) {
+      decompressed = palmDocDecompress(recordData);
+    } else if (compression === 1) {
+      decompressed = recordData;
+    } else {
+      // HUFF/CDIC or unknown — skip
+      console.warn(`Unsupported MOBI compression: ${compression}`);
+      decompressed = recordData;
+    }
+
+    try {
+      textParts.push(new TextDecoder(encoding, { fatal: false }).decode(decompressed));
+    } catch {
+      textParts.push(new TextDecoder("utf-8", { fatal: false }).decode(decompressed));
+    }
+  }
+
+  const rawText = textParts.join("");
+  // MOBI text often contains HTML
+  return stripHtmlTags(rawText).trim();
 }
 
 // ── EPUB extraction ─────────────────────────────────────────────
@@ -420,9 +526,9 @@ Deno.serve(async (req) => {
         text = extractTextFromEpub(rawBuffer);
       }
     } else if (isMobi(bytes) || ext === "mobi" || ext === "azw" || ext === "azw3") {
-      // ── MOBI/AZW: AI-based extraction ──
-      console.log("Detected MOBI/AZW format, extracting via AI...");
-      text = await extractTextWithAI(bytes, "application/octet-stream", lovableApiKey);
+      // ── MOBI/AZW: native PalmDoc parser ──
+      console.log("Detected MOBI/AZW format, extracting...");
+      text = extractTextFromMobi(bytes);
     } else if (isOle2(bytes) || ext === "doc") {
       // ── DOC (OLE2): AI-based extraction ──
       console.log("Detected DOC format, extracting via AI...");
