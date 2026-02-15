@@ -6,12 +6,14 @@ import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useGenerateAudio } from '@/hooks/useGenerateAudio';
 import { useBackgroundTranslation } from '@/hooks/useBackgroundTranslation';
+import { useTranslateBatch } from '@/hooks/useTranslateBatch';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Sentence, Language } from '@/types';
 
 // Fetch all sentences with pagination to overcome the 1000-row limit
@@ -45,11 +47,15 @@ async function fetchAllSentences(bookId: string) {
 export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [showSettings, setShowSettings] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { isGenerating, progress: genProgress, error: genError, generateBothBatch, resetRanges } = useGenerateAudio(bookId);
   const { voiceSettings, getVoice } = useVoiceSettings();
+  const { translateRange, TRANSLATE_BATCH_SIZE } = useTranslateBatch(bookId);
   const audioTriggeredRef = useRef<string | null>(null);
   const lastPrefetchTriggerRef = useRef<number>(-1);
+  const translateAndRefetchRef = useRef<number>(0);
 
 
   const { data: book, isLoading: bookLoading } = useQuery({
@@ -73,6 +79,9 @@ export default function Player() {
     queryKey: ['sentences', bookId],
     queryFn: () => fetchAllSentences(bookId!),
     enabled: !!bookId && book?.status === 'ready',
+    // Refetch periodically to pick up background translations
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: savedProgress, isFetched: progressFetched } = useQuery({
@@ -102,6 +111,33 @@ export default function Player() {
       })),
     [dbSentences]
   );
+
+  // On-demand translation: when seeking to untranslated area, translate and refetch
+  const ensureTranslated = useCallback(async (sentenceOrder: number) => {
+    if (!bookId || sentences.length === 0) return;
+    // Find the sentence at this order
+    const idx = sentences.findIndex(s => s.sentenceOrder >= sentenceOrder);
+    if (idx === -1) return;
+    const s = sentences[idx];
+    // Check if translation is missing
+    if (s.enTranslation && s.ruTranslation) return;
+    
+    setIsTranslating(true);
+    const gen = ++translateAndRefetchRef.current;
+    try {
+      // Translate the batch starting at this order
+      const batchStart = Math.max(1, sentenceOrder - (sentenceOrder % TRANSLATE_BATCH_SIZE));
+      await translateRange(batchStart);
+      // Only refetch if this is still the latest request
+      if (translateAndRefetchRef.current === gen) {
+        await queryClient.invalidateQueries({ queryKey: ['sentences', bookId] });
+      }
+    } finally {
+      if (translateAndRefetchRef.current === gen) {
+        setIsTranslating(false);
+      }
+    }
+  }, [bookId, sentences, translateRange, TRANSLATE_BATCH_SIZE, queryClient]);
 
   const {
     currentIndex,
@@ -146,7 +182,7 @@ export default function Player() {
     generateBothBatch(lang1, lang2, order, v1, v2, isVoiceChange, false);
   }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges, sentences]);
 
-  // Prefetch audio every 5 sentences
+  // Prefetch audio every 5 sentences (also ensure translations exist ahead)
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
 
@@ -159,10 +195,14 @@ export default function Player() {
 
     lastPrefetchTriggerRef.current = triggerPoint;
     const nextBatchStart = getSentenceOrder(Math.min(triggerPoint + 5, sentences.length - 1));
-    const v1 = getVoice(settings.language1);
-    const v2 = getVoice(settings.language2);
-    generateBothBatch(settings.language1, settings.language2, nextBatchStart, v1, v2, false, true);
-  }, [currentIndex, bookId, book?.status, settings.language1, settings.language2, generateBothBatch, getVoice, sentences]);
+    
+    // Ensure translations exist before generating audio
+    ensureTranslated(nextBatchStart).then(() => {
+      const v1 = getVoice(settings.language1);
+      const v2 = getVoice(settings.language2);
+      generateBothBatch(settings.language1, settings.language2, nextBatchStart, v1, v2, false, true);
+    });
+  }, [currentIndex, bookId, book?.status, settings.language1, settings.language2, generateBothBatch, getVoice, sentences, ensureTranslated]);
 
   // Save progress
   useEffect(() => {
@@ -222,12 +262,14 @@ export default function Player() {
           onChange={(e) => {
             const newIndex = Number(e.target.value);
             goTo(newIndex);
-            // On manual seek: generate audio for the new position
+            // On manual seek: ensure translations exist, then generate audio
             if (bookId && book?.status === 'ready') {
-              const v1 = getVoice(settings.language1);
-              const v2 = getVoice(settings.language2);
               const order = getSentenceOrder(newIndex);
-              generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
+              ensureTranslated(order).then(() => {
+                const v1 = getVoice(settings.language1);
+                const v2 = getVoice(settings.language2);
+                generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
+              });
             }
           }}
           className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary
@@ -276,7 +318,13 @@ export default function Player() {
           totalSentences={totalSentences}
         />
 
-        {isGenerating && (
+        {isTranslating && (
+          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Translating sentences…</span>
+          </div>
+        )}
+        {isGenerating && !isTranslating && (
           <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>{genProgress || 'Preparing audio…'}</span>
