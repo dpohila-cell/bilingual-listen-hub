@@ -262,14 +262,15 @@ export default function Player() {
           onChange={(e) => {
             const newIndex = Number(e.target.value);
             goTo(newIndex);
-            // On manual seek: ensure translations exist, then generate audio
+            // On manual seek: ensure translations exist, then generate audio (awaited)
             if (bookId && book?.status === 'ready') {
               const order = getSentenceOrder(newIndex);
-              ensureTranslated(order).then(() => {
+              (async () => {
+                await ensureTranslated(order);
                 const v1 = getVoice(settings.language1);
                 const v2 = getVoice(settings.language2);
-                generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
-              });
+                await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
+              })();
             }
           }}
           className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary
