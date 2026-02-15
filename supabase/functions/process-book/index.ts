@@ -131,29 +131,35 @@ function palmDocDecompress(data: Uint8Array): Uint8Array {
   while (i < data.length) {
     const byte = data[i++];
     if (byte === 0) {
+      // Literal null
       output.push(0);
     } else if (byte >= 1 && byte <= 8) {
       // Copy next 'byte' bytes as-is
       for (let j = 0; j < byte && i < data.length; j++) {
         output.push(data[i++]);
       }
-    } else if (byte >= 0x80) {
-      // LZ77 distance-length pair
+    } else if (byte >= 0x09 && byte <= 0x7F) {
+      // Literal byte
+      output.push(byte);
+    } else if (byte >= 0xC0) {
+      // Space + lower 7 bits as character
+      output.push(0x20);
+      output.push(byte & 0x7F);
+    } else {
+      // 0x80-0xBF: LZ77 distance-length pair (2 bytes)
       if (i >= data.length) break;
       const next = data[i++];
-      const dist = ((byte << 8) | next) >> 3 & 0x7FF;
-      const len = (next & 0x07) + 3;
-      for (let j = 0; j < len; j++) {
-        if (output.length - dist >= 0) {
-          output.push(output[output.length - dist]);
+      const combined = (byte << 8) | next;
+      const dist = (combined >> 3) & 0x7FF;
+      const len = (combined & 0x07) + 3;
+      if (dist > 0) {
+        for (let j = 0; j < len; j++) {
+          const srcIdx = output.length - dist;
+          if (srcIdx >= 0) {
+            output.push(output[srcIdx]);
+          }
         }
       }
-    } else if (byte >= 0x09 && byte <= 0x7F) {
-      output.push(byte);
-    } else {
-      // 0x01-0x08 handled above; space + char
-      output.push(0x20);
-      output.push(byte ^ 0x80);
     }
   }
   return new Uint8Array(output);
