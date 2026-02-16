@@ -497,7 +497,7 @@ async function translateBatch(
   sentences: string[],
   lovableApiKey: string,
   originalLanguage: string = "en"
-): Promise<Array<{ en: string; ru: string; sv: string }>> {
+): Promise<Array<{ en: string | null; ru: string | null; sv: string | null }>> {
   const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
   const sourceLang = langNames[originalLanguage] || "Russian";
 
@@ -532,21 +532,23 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
 
     if (!aiResponse.ok) {
       console.error("AI gateway error:", aiResponse.status, await aiResponse.text());
-      return sentences.map((s) => ({ en: s, ru: s, sv: s }));
+      // Return nulls so background translation can retry later
+      return sentences.map(() => ({ en: null, ru: null, sv: null }));
     }
 
     const aiData = await aiResponse.json();
     let content = aiData.choices?.[0]?.message?.content?.trim();
     if (!content) {
       console.error("No content from AI");
-      return sentences.map((s) => ({ en: s, ru: s, sv: s }));
+      return sentences.map(() => ({ en: null, ru: null, sv: null }));
     }
     if (content.startsWith("```")) {
       content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     }
     return JSON.parse(content);
-  } catch {
-    return sentences.map((s) => ({ en: s, ru: s, sv: s }));
+  } catch (err) {
+    console.error("translateBatch error:", err);
+    return sentences.map(() => ({ en: null, ru: null, sv: null }));
   }
 }
 
@@ -753,7 +755,8 @@ Deno.serve(async (req) => {
     const translations = await translateBatch(firstBatch, lovableApiKey, detectedLanguage);
 
     for (let j = 0; j < firstBatch.length; j++) {
-      const t = translations[j] || { en: firstBatch[j], ru: firstBatch[j], sv: firstBatch[j] };
+      const t = translations[j];
+      if (!t || (!t.en && !t.ru && !t.sv)) continue; // skip if translation failed
       await supabase
         .from("sentences")
         .update({
