@@ -55,14 +55,15 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const GOOGLE_TTS_API_KEY = Deno.env.get("GOOGLE_TTS_API_KEY");
     if (!GOOGLE_TTS_API_KEY) {
-      return new Response(JSON.stringify({ error: "Google TTS API key not configured" }), {
+      console.error("Google TTS API key not configured");
+      return new Response(JSON.stringify({ error: "Service unavailable" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -206,7 +207,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("Error in generate-audio:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "Internal error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
