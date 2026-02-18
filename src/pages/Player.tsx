@@ -355,7 +355,7 @@ export default function Player() {
         </div>
       )}
 
-      <div className="fixed bottom-[57px] left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border py-1">
+      <div className="fixed bottom-[57px] left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border py-3">
         <div className="mx-auto max-w-lg">
         <PlayerControls
           isPlaying={isPlaying}
