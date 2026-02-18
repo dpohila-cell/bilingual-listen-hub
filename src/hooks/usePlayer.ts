@@ -151,6 +151,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   const [settings, _setSettings] = useState<PlaybackSettings>(() =>
     getDefaultSettings(originalLanguage || 'en')
   );
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   useEffect(() => {
     if (bookId && originalLanguage) {
@@ -213,34 +215,35 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const sentence = sentences[index];
       setCurrentIndex(index);
 
-      const lang1 = settings.playbackOrder === '1-2' ? settings.language1 : settings.language2;
-      const lang2 = settings.playbackOrder === '1-2' ? settings.language2 : settings.language1;
-      const activeLang1: 1 | 2 = settings.playbackOrder === '1-2' ? 1 : 2;
-      const activeLang2: 1 | 2 = settings.playbackOrder === '1-2' ? 2 : 1;
+      // Read latest settings from ref so mid-playback changes take effect
+      const s = settingsRef.current;
+      const lang1 = s.playbackOrder === '1-2' ? s.language1 : s.language2;
+      const lang2 = s.playbackOrder === '1-2' ? s.language2 : s.language1;
+      const activeLang1: 1 | 2 = s.playbackOrder === '1-2' ? 1 : 2;
+      const activeLang2: 1 | 2 = s.playbackOrder === '1-2' ? 2 : 1;
 
       try {
-        // Use pre-unlocked audio elements (slot A for lang1, slot B for lang2)
         setActiveLang(activeLang1);
         setIsLoading(false);
         const audioA = getUnlockedAudio('A');
         const url1 = getOrCacheUrl(bookId, lang1, sentence.sentenceOrder);
         currentAudioRef.current = audioA;
-        await playAudioElement(audioA, url1, settings.playbackSpeed);
+        await playAudioElement(audioA, url1, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
-        await wait(settings.pauseDuration * 1000, gen);
+        await wait(settingsRef.current.pauseDuration * 1000, gen);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(activeLang2);
         const audioB = getUnlockedAudio('B');
         const url2 = getOrCacheUrl(bookId, lang2, sentence.sentenceOrder);
         currentAudioRef.current = audioB;
-        await playAudioElement(audioB, url2, settings.playbackSpeed);
+        await playAudioElement(audioB, url2, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
-        await wait(settings.pauseDuration * 500, gen);
+        await wait(settingsRef.current.pauseDuration * 500, gen);
         if (playGenRef.current !== gen) return;
 
         playSentence(index + 1, gen);
@@ -251,7 +254,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         setIsLoading(false);
       }
     },
-    [sentences, settings, wait, bookId]
+    [sentences, wait, bookId]
   );
 
   const play = useCallback(() => {

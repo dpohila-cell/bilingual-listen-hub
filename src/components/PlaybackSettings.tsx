@@ -1,6 +1,6 @@
 import { PlaybackSettings as PlaybackSettingsType, Language, VOICE_OPTIONS } from '@/types';
 import { LanguagePicker } from './LanguagePicker';
-import { ArrowDownUp, Timer, Gauge } from 'lucide-react';
+import { Timer, Gauge } from 'lucide-react';
 
 interface PlaybackSettingsProps {
   settings: PlaybackSettingsType;
@@ -37,27 +37,6 @@ export function PlaybackSettingsPanel({ settings, onUpdate }: PlaybackSettingsPr
         exclude={settings.language1}
       />
 
-      <div className="flex flex-col gap-1.5">
-        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          <ArrowDownUp className="h-3.5 w-3.5" />
-          Playback Order
-        </span>
-        <div className="flex gap-2">
-          {(['1-2', '2-1'] as const).map((order) => (
-            <button
-              key={order}
-              onClick={() => onUpdate({ ...settings, playbackOrder: order })}
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                settings.playbackOrder === order
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'bg-card text-foreground border border-border hover:bg-muted'
-              }`}
-            >
-              {order === '1-2' ? 'L1 → L2' : 'L2 → L1'}
-            </button>
-          ))}
-        </div>
-      </div>
 
       <div className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
