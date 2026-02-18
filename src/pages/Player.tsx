@@ -247,7 +247,7 @@ export default function Player() {
   })();
 
   return (
-    <div className="flex flex-col gap-4 p-5 pt-10">
+    <div className="flex flex-col gap-4 p-5 pt-10 pb-28">
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary/80 to-primary">
           <BookOpen className="h-4 w-4 text-primary-foreground" />
@@ -355,7 +355,8 @@ export default function Player() {
         </div>
       )}
 
-      <div className="pb-4">
+      <div className="fixed bottom-[57px] left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border py-1">
+        <div className="mx-auto max-w-lg">
         <PlayerControls
           isPlaying={isPlaying}
           onPlayPause={togglePlay}
@@ -366,6 +367,7 @@ export default function Player() {
           canPrev={currentIndex > 0}
           canNext={currentIndex < totalSentences - 1}
         />
+        </div>
       </div>
     </div>
   );
