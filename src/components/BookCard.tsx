@@ -1,4 +1,4 @@
-import { Book, LANGUAGE_FLAGS, LANGUAGE_LABELS, UserProgress } from '@/types';
+import { Book, LANGUAGE_LABELS, UserProgress } from '@/types';
 import { BookOpen, Headphones, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -40,7 +40,7 @@ export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
           <p className="mt-0.5 text-sm text-muted-foreground truncate">{book.author}</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{LANGUAGE_FLAGS[book.originalLanguage]} {LANGUAGE_LABELS[book.originalLanguage]}</span>
+          <span>{LANGUAGE_LABELS[book.originalLanguage]}</span>
           <span>·</span>
           <span>{book.chapterCount} chapters</span>
         </div>
