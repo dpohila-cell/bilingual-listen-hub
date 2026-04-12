@@ -241,21 +241,43 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const activeLang2: 1 | 2 = s.playbackOrder === '1-2' ? 2 : 1;
 
       try {
+        // Wait for first audio file to be ready
         setActiveLang(activeLang1);
+        setIsLoading(true);
+        const url1 = await waitForAudioFile(bookId, lang1, sentence.sentenceOrder);
+        if (playGenRef.current !== gen) return;
+        if (!url1) {
+          // File never became available — skip this sentence entirely
+          console.warn(`Skipping sentence ${sentence.sentenceOrder}: lang1 audio not ready`);
+          playSentence(index + 1, gen);
+          return;
+        }
+
         setIsLoading(false);
         const audioA = getUnlockedAudio('A');
         currentAudioRef.current = audioA;
-        await playAudioElement(audioA, bookId, lang1, sentence.sentenceOrder, settingsRef.current.playbackSpeed);
+        await playAudioElement(audioA, url1, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
         await wait(settingsRef.current.pauseDuration * 1000, gen);
         if (playGenRef.current !== gen) return;
 
+        // Wait for second audio file to be ready
         setActiveLang(activeLang2);
+        setIsLoading(true);
+        const url2 = await waitForAudioFile(bookId, lang2, sentence.sentenceOrder);
+        if (playGenRef.current !== gen) return;
+        if (!url2) {
+          console.warn(`Skipping sentence ${sentence.sentenceOrder}: lang2 audio not ready`);
+          playSentence(index + 1, gen);
+          return;
+        }
+
+        setIsLoading(false);
         const audioB = getUnlockedAudio('B');
         currentAudioRef.current = audioB;
-        await playAudioElement(audioB, bookId, lang2, sentence.sentenceOrder, settingsRef.current.playbackSpeed);
+        await playAudioElement(audioB, url2, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
