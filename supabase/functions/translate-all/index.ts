@@ -9,6 +9,25 @@ const corsHeaders = {
 const AI_BATCH_SIZE = 25;
 const MAX_PER_CALL = 25; // 1 AI call per function invocation to avoid timeout
 
+function repairAndParseJson(raw: string): unknown {
+  // Strip control chars except newlines/tabs
+  let s = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  try { return JSON.parse(s); } catch { /* continue */ }
+
+  // Fix trailing commas
+  s = s.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+
+  // If truncated array/object, close it
+  if (s.startsWith("[") && !s.endsWith("]")) {
+    const lastClose = s.lastIndexOf("}");
+    if (lastClose > 0) s = s.substring(0, lastClose + 1) + "]";
+  }
+
+  try { return JSON.parse(s); } catch (e) {
+    throw new Error(`JSON repair failed: ${(e as Error).message}`);
+  }
+}
+
 async function translateBatch(
   sentences: Array<{ id: string; original_text: string }>,
   lovableApiKey: string,
@@ -56,7 +75,7 @@ ${sentences.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
   if (content.startsWith("```")) {
     content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
-  return JSON.parse(content);
+  return repairAndParseJson(content) as Array<{ en: string; ru: string; sv: string }>;
 }
 
 Deno.serve(async (req) => {
