@@ -94,9 +94,9 @@ function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
 }
 
 /** Check if the audio file actually exists before attempting playback */
-async function waitForAudioFile(bookId: string, language: Language, sentenceOrder: number, maxWaitMs = 60000): Promise<string | null> {
+async function waitForAudioFile(bookId: string, language: Language, sentenceOrder: number, maxWaitMs = 20000): Promise<string | null> {
   const startTime = Date.now();
-  const pollInterval = 2000;
+  const pollInterval = 1500;
 
   while (Date.now() - startTime < maxWaitMs) {
     const url = buildAudioUrl(bookId, language, sentenceOrder);

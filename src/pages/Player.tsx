@@ -275,6 +275,8 @@ export default function Player() {
             value={currentIndex}
             onChange={(e) => {
               const newIndex = Number(e.target.value);
+              // Pause playback on seek to prevent text/audio mismatch
+              if (isPlaying) togglePlay();
               goTo(newIndex);
               if (bookId && book?.status === 'ready') {
                 const order = getSentenceOrder(newIndex);
