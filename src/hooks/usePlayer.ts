@@ -90,26 +90,45 @@ function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
   return unlockedAudioB;
 }
 
-function playAudioElement(audio: HTMLAudioElement, url: string, speed: number, retries = 3): Promise<'played' | 'skipped'> {
+function playAudioElement(audio: HTMLAudioElement, bookId: string, language: Language, sentenceOrder: number, speed: number, retries = 3): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
-    audio.playbackRate = speed;
-    audio.currentTime = 0;
-
     let attemptCount = 0;
+    let resolved = false;
 
-    const onEnded = () => { cleanup(); resolve('played'); };
+    const done = (result: 'played' | 'skipped') => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const tryPlay = () => {
+      const url = buildAudioUrl(bookId, language, sentenceOrder);
+      audio.playbackRate = speed;
+      audio.currentTime = 0;
+      audio.src = url;
+      audio.play().catch(() => {
+        // play() rejected — let error event handle retries
+        // If error event doesn't fire within 3s, skip
+        setTimeout(() => {
+          if (!resolved) {
+            onError();
+          }
+        }, 3000);
+      });
+    };
+
+    const onEnded = () => { done('played'); };
     const onError = () => {
       attemptCount++;
       if (attemptCount < retries) {
-        // Retry after a short delay — audio file may still be generating
+        // Retry after delay — audio file may still be generating
         setTimeout(() => {
-          audio.src = url.includes('?') ? `${url.split('?')[0]}?t=${Date.now()}` : `${url}?t=${Date.now()}`;
-          audio.play().catch(() => { cleanup(); console.warn('Audio not available, skipping'); resolve('skipped'); });
-        }, 1500);
+          if (!resolved) tryPlay();
+        }, 2000);
       } else {
-        cleanup();
-        console.warn('Audio not available after retries, skipping');
-        resolve('skipped');
+        console.warn(`Audio not available after ${retries} retries, skipping sentence ${sentenceOrder}`);
+        done('skipped');
       }
     };
     const cleanup = () => {
@@ -119,8 +138,7 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number, r
 
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
-    audio.src = url;
-    audio.play().catch(() => resolve('skipped'));
+    tryPlay();
   });
 }
 
