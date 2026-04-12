@@ -329,13 +329,13 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   const goToNext = useCallback(() => {
     stopCurrent();
     setActiveLang(null);
-    const next = Math.min(currentIndex + 1, sentences.length - 1);
+    const next = Math.min(currentIndex + 1, sentencesRef.current.length - 1);
     setCurrentIndex(next);
     if (isPlaying) {
       const gen = playGenRef.current;
       playSentence(next, gen);
     }
-  }, [stopCurrent, currentIndex, sentences.length, isPlaying, playSentence]);
+  }, [stopCurrent, currentIndex, isPlaying, playSentence]);
 
   const goToPrev = useCallback(() => {
     stopCurrent();
@@ -349,7 +349,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   }, [stopCurrent, currentIndex, isPlaying, playSentence]);
 
   const goTo = useCallback((index: number) => {
-    const clamped = Math.max(0, Math.min(index, sentences.length - 1));
+    const clamped = Math.max(0, Math.min(index, sentencesRef.current.length - 1));
     stopCurrent();
     setActiveLang(null);
     setCurrentIndex(clamped);
@@ -357,7 +357,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
       const gen = playGenRef.current;
       playSentence(clamped, gen);
     }
-  }, [stopCurrent, sentences.length, isPlaying, playSentence]);
+  }, [stopCurrent, isPlaying, playSentence]);
 
   useEffect(() => {
     return () => {
