@@ -50,20 +50,14 @@ function getAudioUrl(bookId: string, language: Language, sentenceOrder: number):
   return data.publicUrl;
 }
 
-// Prefetch URL cache (no longer caches Audio elements — we reuse unlocked ones)
-const urlCache = new Map<string, string>();
-
+// Cache cleared on voice change — URLs are always built fresh with cache buster
 export function clearAudioCache() {
-  urlCache.clear();
+  // no-op now; URLs are always generated fresh
 }
 
-function getOrCacheUrl(bookId: string, language: Language, sentenceOrder: number): string {
-  const key = `${bookId}/${language}/${sentenceOrder}`;
-  if (urlCache.has(key)) return urlCache.get(key)!;
+function buildAudioUrl(bookId: string, language: Language, sentenceOrder: number): string {
   const url = getAudioUrl(bookId, language, sentenceOrder);
-  const bustUrl = `${url}?t=${Date.now()}`;
-  urlCache.set(key, bustUrl);
-  return bustUrl;
+  return `${url}?t=${Date.now()}`;
 }
 
 // Two reusable audio elements — unlocked once from user gesture on iOS
