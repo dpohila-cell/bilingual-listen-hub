@@ -200,7 +200,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     playGenRef.current += 1;
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current.removeAttribute('src');
+      currentAudioRef.current.load();
       currentAudioRef.current = null;
     }
   }, []);
