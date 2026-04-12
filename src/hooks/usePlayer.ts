@@ -302,11 +302,11 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   );
 
   const play = useCallback(() => {
-    unlockAudioForIOS(); // Must be called synchronously in gesture context
+    unlockAudioForIOS();
     const gen = ++playGenRef.current;
     setIsPlaying(true);
-    playSentence(currentIndex, gen);
-  }, [currentIndex, playSentence]);
+    playSentence(currentIndexRef.current, gen);
+  }, [playSentence]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);
