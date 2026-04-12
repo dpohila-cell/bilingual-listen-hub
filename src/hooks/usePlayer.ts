@@ -204,16 +204,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     });
   }, []);
 
-  // Prefetch upcoming sentence URLs
-  useEffect(() => {
-    if (!bookId || sentences.length === 0) return;
-    const { language1, language2 } = settings;
-    for (let i = currentIndex; i < Math.min(currentIndex + 4, sentences.length); i++) {
-      const order = sentences[i].sentenceOrder;
-      getOrCacheUrl(bookId, language1, order);
-      getOrCacheUrl(bookId, language2, order);
-    }
-  }, [currentIndex, bookId, sentences, settings.language1, settings.language2]);
+  // Prefetch: no-op now, URLs are built fresh each time
+  // (kept as a placeholder to avoid removing the effect structure)
 
   const playSentence = useCallback(
     async (index: number, gen: number) => {
