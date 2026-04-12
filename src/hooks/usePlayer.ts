@@ -230,9 +230,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         setActiveLang(activeLang1);
         setIsLoading(false);
         const audioA = getUnlockedAudio('A');
-        const url1 = getOrCacheUrl(bookId, lang1, sentence.sentenceOrder);
         currentAudioRef.current = audioA;
-        await playAudioElement(audioA, url1, settingsRef.current.playbackSpeed);
+        await playAudioElement(audioA, bookId, lang1, sentence.sentenceOrder, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
@@ -241,9 +240,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
 
         setActiveLang(activeLang2);
         const audioB = getUnlockedAudio('B');
-        const url2 = getOrCacheUrl(bookId, lang2, sentence.sentenceOrder);
         currentAudioRef.current = audioB;
-        await playAudioElement(audioB, url2, settingsRef.current.playbackSpeed);
+        await playAudioElement(audioB, bookId, lang2, sentence.sentenceOrder, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
