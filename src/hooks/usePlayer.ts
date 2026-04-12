@@ -90,9 +90,29 @@ function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
   return unlockedAudioB;
 }
 
-function playAudioElement(audio: HTMLAudioElement, bookId: string, language: Language, sentenceOrder: number, speed: number, retries = 3): Promise<'played' | 'skipped'> {
+/** Check if the audio file actually exists before attempting playback */
+async function waitForAudioFile(bookId: string, language: Language, sentenceOrder: number, maxWaitMs = 60000): Promise<string | null> {
+  const startTime = Date.now();
+  const pollInterval = 2000;
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const url = buildAudioUrl(bookId, language, sentenceOrder);
+    try {
+      const resp = await fetch(url, { method: 'HEAD' });
+      if (resp.ok) {
+        return url;
+      }
+    } catch {
+      // Network error, keep polling
+    }
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+  console.warn(`Audio file not ready after ${maxWaitMs / 1000}s: ${language} sentence ${sentenceOrder}`);
+  return null;
+}
+
+function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
-    let attemptCount = 0;
     let resolved = false;
 
     const done = (result: 'played' | 'skipped') => {
@@ -102,34 +122,14 @@ function playAudioElement(audio: HTMLAudioElement, bookId: string, language: Lan
       resolve(result);
     };
 
-    const tryPlay = () => {
-      const url = buildAudioUrl(bookId, language, sentenceOrder);
-      audio.playbackRate = speed;
-      audio.currentTime = 0;
-      audio.src = url;
-      audio.play().catch(() => {
-        // play() rejected — let error event handle retries
-        // If error event doesn't fire within 3s, skip
-        setTimeout(() => {
-          if (!resolved) {
-            onError();
-          }
-        }, 3000);
-      });
-    };
-
     const onEnded = () => { done('played'); };
     const onError = () => {
-      attemptCount++;
-      if (attemptCount < retries) {
-        // Retry after delay — audio file may still be generating
-        setTimeout(() => {
-          if (!resolved) tryPlay();
-        }, 2000);
-      } else {
-        console.warn(`Audio not available after ${retries} retries, skipping sentence ${sentenceOrder}`);
-        done('skipped');
-      }
+      // File was confirmed via HEAD but failed to play — stop and skip
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      console.warn('Audio playback error after confirmed file, skipping');
+      done('skipped');
     };
     const cleanup = () => {
       audio.removeEventListener('ended', onEnded);
@@ -138,7 +138,21 @@ function playAudioElement(audio: HTMLAudioElement, bookId: string, language: Lan
 
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
-    tryPlay();
+
+    audio.playbackRate = speed;
+    audio.currentTime = 0;
+    audio.src = url;
+    audio.play().catch(() => {
+      // play() rejected — skip after timeout if no error event fires
+      setTimeout(() => {
+        if (!resolved) {
+          audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
+          done('skipped');
+        }
+      }, 5000);
+    });
   });
 }
 
