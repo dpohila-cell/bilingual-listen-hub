@@ -50,20 +50,14 @@ function getAudioUrl(bookId: string, language: Language, sentenceOrder: number):
   return data.publicUrl;
 }
 
-// Prefetch URL cache (no longer caches Audio elements — we reuse unlocked ones)
-const urlCache = new Map<string, string>();
-
+// Cache cleared on voice change — URLs are always built fresh with cache buster
 export function clearAudioCache() {
-  urlCache.clear();
+  // no-op now; URLs are always generated fresh
 }
 
-function getOrCacheUrl(bookId: string, language: Language, sentenceOrder: number): string {
-  const key = `${bookId}/${language}/${sentenceOrder}`;
-  if (urlCache.has(key)) return urlCache.get(key)!;
+function buildAudioUrl(bookId: string, language: Language, sentenceOrder: number): string {
   const url = getAudioUrl(bookId, language, sentenceOrder);
-  const bustUrl = `${url}?t=${Date.now()}`;
-  urlCache.set(key, bustUrl);
-  return bustUrl;
+  return `${url}?t=${Date.now()}`;
 }
 
 // Two reusable audio elements — unlocked once from user gesture on iOS
@@ -96,26 +90,45 @@ function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
   return unlockedAudioB;
 }
 
-function playAudioElement(audio: HTMLAudioElement, url: string, speed: number, retries = 3): Promise<'played' | 'skipped'> {
+function playAudioElement(audio: HTMLAudioElement, bookId: string, language: Language, sentenceOrder: number, speed: number, retries = 3): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
-    audio.playbackRate = speed;
-    audio.currentTime = 0;
-
     let attemptCount = 0;
+    let resolved = false;
 
-    const onEnded = () => { cleanup(); resolve('played'); };
+    const done = (result: 'played' | 'skipped') => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const tryPlay = () => {
+      const url = buildAudioUrl(bookId, language, sentenceOrder);
+      audio.playbackRate = speed;
+      audio.currentTime = 0;
+      audio.src = url;
+      audio.play().catch(() => {
+        // play() rejected — let error event handle retries
+        // If error event doesn't fire within 3s, skip
+        setTimeout(() => {
+          if (!resolved) {
+            onError();
+          }
+        }, 3000);
+      });
+    };
+
+    const onEnded = () => { done('played'); };
     const onError = () => {
       attemptCount++;
       if (attemptCount < retries) {
-        // Retry after a short delay — audio file may still be generating
+        // Retry after delay — audio file may still be generating
         setTimeout(() => {
-          audio.src = url.includes('?') ? `${url.split('?')[0]}?t=${Date.now()}` : `${url}?t=${Date.now()}`;
-          audio.play().catch(() => { cleanup(); console.warn('Audio not available, skipping'); resolve('skipped'); });
-        }, 1500);
+          if (!resolved) tryPlay();
+        }, 2000);
       } else {
-        cleanup();
-        console.warn('Audio not available after retries, skipping');
-        resolve('skipped');
+        console.warn(`Audio not available after ${retries} retries, skipping sentence ${sentenceOrder}`);
+        done('skipped');
       }
     };
     const cleanup = () => {
@@ -125,8 +138,7 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number, r
 
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
-    audio.src = url;
-    audio.play().catch(() => resolve('skipped'));
+    tryPlay();
   });
 }
 
@@ -192,16 +204,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     });
   }, []);
 
-  // Prefetch upcoming sentence URLs
-  useEffect(() => {
-    if (!bookId || sentences.length === 0) return;
-    const { language1, language2 } = settings;
-    for (let i = currentIndex; i < Math.min(currentIndex + 4, sentences.length); i++) {
-      const order = sentences[i].sentenceOrder;
-      getOrCacheUrl(bookId, language1, order);
-      getOrCacheUrl(bookId, language2, order);
-    }
-  }, [currentIndex, bookId, sentences, settings.language1, settings.language2]);
+  // Prefetch: no-op now, URLs are built fresh each time
+  // (kept as a placeholder to avoid removing the effect structure)
 
   const playSentence = useCallback(
     async (index: number, gen: number) => {
@@ -226,9 +230,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         setActiveLang(activeLang1);
         setIsLoading(false);
         const audioA = getUnlockedAudio('A');
-        const url1 = getOrCacheUrl(bookId, lang1, sentence.sentenceOrder);
         currentAudioRef.current = audioA;
-        await playAudioElement(audioA, url1, settingsRef.current.playbackSpeed);
+        await playAudioElement(audioA, bookId, lang1, sentence.sentenceOrder, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
@@ -237,9 +240,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
 
         setActiveLang(activeLang2);
         const audioB = getUnlockedAudio('B');
-        const url2 = getOrCacheUrl(bookId, lang2, sentence.sentenceOrder);
         currentAudioRef.current = audioB;
-        await playAudioElement(audioB, url2, settingsRef.current.playbackSpeed);
+        await playAudioElement(audioB, bookId, lang2, sentence.sentenceOrder, settingsRef.current.playbackSpeed);
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
