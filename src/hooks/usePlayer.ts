@@ -157,7 +157,12 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
 }
 
 export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?: string, originalLanguage?: Language) {
-  const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
+  const [currentIndex, _setCurrentIndex] = useState(initialIndex || 0);
+  const currentIndexRef = useRef(currentIndex);
+  const setCurrentIndex = useCallback((idx: number) => {
+    currentIndexRef.current = idx;
+    _setCurrentIndex(idx);
+  }, []);
   const initialAppliedRef = useRef(false);
 
   useEffect(() => {
@@ -297,11 +302,11 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
   );
 
   const play = useCallback(() => {
-    unlockAudioForIOS(); // Must be called synchronously in gesture context
+    unlockAudioForIOS();
     const gen = ++playGenRef.current;
     setIsPlaying(true);
-    playSentence(currentIndex, gen);
-  }, [currentIndex, playSentence]);
+    playSentence(currentIndexRef.current, gen);
+  }, [playSentence]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);
