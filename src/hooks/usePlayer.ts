@@ -2,14 +2,17 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { PlaybackSettings, Language, Sentence } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 
-function getSentenceText(sentence: Sentence, lang: Language): string {
+function getSentenceText(sentence: Sentence, lang: Language, originalLanguage?: Language): string {
   const map: Record<Language, string> = {
     en: sentence.enTranslation,
     ru: sentence.ruTranslation,
     sv: sentence.svTranslation,
   };
   const text = map[lang];
-  return text || sentence.originalText;
+  // Only fall back to originalText if this IS the original language
+  if (text) return text;
+  if (lang === originalLanguage) return sentence.originalText;
+  return '';
 }
 
 function getDefaultSettings(originalLanguage: Language): PlaybackSettings {
