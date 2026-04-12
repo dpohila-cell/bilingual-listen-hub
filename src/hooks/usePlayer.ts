@@ -162,6 +162,8 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
 export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?: string, originalLanguage?: Language) {
   const [currentIndex, _setCurrentIndex] = useState(initialIndex || 0);
   const currentIndexRef = useRef(currentIndex);
+  const sentencesRef = useRef(sentences);
+  sentencesRef.current = sentences;
   const setCurrentIndex = useCallback((idx: number) => {
     currentIndexRef.current = idx;
     _setCurrentIndex(idx);
