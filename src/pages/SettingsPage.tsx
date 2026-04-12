@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Language, LANGUAGE_LABELS, LANGUAGE_FLAGS, VOICE_OPTIONS } from '@/types';
+import { Language, LANGUAGE_LABELS, VOICE_OPTIONS } from '@/types';
 import { useVoiceSettings, useVoicePreview } from '@/hooks/useVoiceSettings';
 
 type SettingsView = 'menu' | 'account' | 'language-voice';
@@ -286,7 +286,6 @@ function LanguageVoiceSection({ onBack }: { onBack: () => void }) {
         return (
           <div key={lang} className="flex flex-col gap-3 rounded-2xl bg-card border border-border p-5">
             <div className="flex items-center gap-2">
-              <span className="text-lg">{LANGUAGE_FLAGS[lang]}</span>
               <h3 className="text-sm font-medium">{LANGUAGE_LABELS[lang]}</h3>
             </div>
 

@@ -1,4 +1,4 @@
-import { Language, LANGUAGE_FLAGS, LANGUAGE_LABELS } from '@/types';
+import { Language, LANGUAGE_LABELS } from '@/types';
 
 interface LanguagePickerProps {
   value: Language;
@@ -28,7 +28,6 @@ export function LanguagePicker({ value, onChange, label, exclude }: LanguagePick
                 : 'bg-card text-foreground border border-border hover:bg-muted'
             }`}
           >
-            <span>{LANGUAGE_FLAGS[lang]}</span>
             <span>{LANGUAGE_LABELS[lang]}</span>
           </button>
         ))}

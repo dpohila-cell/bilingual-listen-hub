@@ -1,4 +1,4 @@
-import { Language, LANGUAGE_FLAGS, LANGUAGE_LABELS } from '@/types';
+import { Language, LANGUAGE_LABELS } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 
@@ -43,7 +43,6 @@ export function SentenceDisplay({
           }`}
         >
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="text-sm">{LANGUAGE_FLAGS[lang1]}</span>
             <span className="text-xs font-medium text-muted-foreground uppercase">
               {LANGUAGE_LABELS[lang1]}
             </span>
@@ -76,7 +75,6 @@ export function SentenceDisplay({
           }`}
         >
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="text-sm">{LANGUAGE_FLAGS[lang2]}</span>
             <span className="text-xs font-medium text-muted-foreground uppercase">
               {LANGUAGE_LABELS[lang2]}
             </span>
