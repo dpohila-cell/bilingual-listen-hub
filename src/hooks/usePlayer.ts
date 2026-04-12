@@ -234,14 +234,15 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
 
   const playSentence = useCallback(
     async (index: number, gen: number) => {
-      if (playGenRef.current !== gen || index >= sentences.length || !bookId) {
+      const currentSentences = sentencesRef.current;
+      if (playGenRef.current !== gen || index >= currentSentences.length || !bookId) {
         setIsPlaying(false);
         setActiveLang(null);
         setIsLoading(false);
         return;
       }
 
-      const sentence = sentences[index];
+      const sentence = currentSentences[index];
       setCurrentIndex(index);
 
       // Read latest settings from ref so mid-playback changes take effect
@@ -303,7 +304,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         setIsLoading(false);
       }
     },
-    [sentences, wait, bookId]
+    [wait, bookId]
   );
 
   const play = useCallback(() => {
