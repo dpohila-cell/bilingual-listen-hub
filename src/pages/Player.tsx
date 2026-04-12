@@ -275,7 +275,6 @@ export default function Player() {
           onChange={(e) => {
             const newIndex = Number(e.target.value);
             goTo(newIndex);
-            // On manual seek: ensure translations exist, then generate audio (awaited)
             if (bookId && book?.status === 'ready') {
               const order = getSentenceOrder(newIndex);
               (async () => {
@@ -286,11 +285,14 @@ export default function Player() {
               })();
             }
           }}
-          className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary
-            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
-            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md
-            [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full
-            [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+          className="w-full h-2 rounded-full appearance-none cursor-pointer
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-[6px] [&::-webkit-slider-thumb]:h-7
+            [&::-webkit-slider-thumb]:rounded-[3px] [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md
+            [&::-webkit-slider-thumb]:shadow-primary/30 [&::-webkit-slider-thumb]:active:h-9 [&::-webkit-slider-thumb]:active:w-[7px]
+            [&::-webkit-slider-thumb]:transition-all
+            [&::-moz-range-thumb]:w-[6px] [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:rounded-[3px]
+            [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md
+            [&::-moz-range-thumb]:shadow-primary/30"
           style={{
             background: `linear-gradient(to right, hsl(var(--primary)) ${progressPercent}%, hsl(var(--muted)) ${progressPercent}%)`,
           }}
