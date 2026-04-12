@@ -267,36 +267,37 @@ export default function Player() {
       </div>
 
       <div className="flex flex-col gap-1">
-        <input
-          type="range"
-          min={0}
-          max={Math.max(totalSentences - 1, 0)}
-          value={currentIndex}
-          onChange={(e) => {
-            const newIndex = Number(e.target.value);
-            goTo(newIndex);
-            if (bookId && book?.status === 'ready') {
-              const order = getSentenceOrder(newIndex);
-              (async () => {
-                await ensureTranslated(order);
-                const v1 = getVoice(settings.language1);
-                const v2 = getVoice(settings.language2);
-                await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
-              })();
-            }
-          }}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer
-            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-[6px] [&::-webkit-slider-thumb]:h-7
-            [&::-webkit-slider-thumb]:rounded-[3px] [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md
-            [&::-webkit-slider-thumb]:shadow-primary/30 [&::-webkit-slider-thumb]:active:h-9 [&::-webkit-slider-thumb]:active:w-[7px]
-            [&::-webkit-slider-thumb]:transition-all
-            [&::-moz-range-thumb]:w-[6px] [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:rounded-[3px]
-            [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md
-            [&::-moz-range-thumb]:shadow-primary/30"
-          style={{
-            background: `linear-gradient(to right, hsl(var(--primary)) ${progressPercent}%, hsl(var(--muted)) ${progressPercent}%)`,
-          }}
-        />
+        <div className="py-3 -my-3 touch-none">
+          <input
+            type="range"
+            min={0}
+            max={Math.max(totalSentences - 1, 0)}
+            value={currentIndex}
+            onChange={(e) => {
+              const newIndex = Number(e.target.value);
+              goTo(newIndex);
+              if (bookId && book?.status === 'ready') {
+                const order = getSentenceOrder(newIndex);
+                (async () => {
+                  await ensureTranslated(order);
+                  const v1 = getVoice(settings.language1);
+                  const v2 = getVoice(settings.language2);
+                  await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
+                })();
+              }
+            }}
+            className="w-full h-2 rounded-full appearance-none cursor-pointer
+              [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-10
+              [&::-webkit-slider-thumb]:rounded-[4px] [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md
+              [&::-webkit-slider-thumb]:shadow-primary/30
+              [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-10 [&::-moz-range-thumb]:rounded-[4px]
+              [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md
+              [&::-moz-range-thumb]:shadow-primary/30"
+            style={{
+              background: `linear-gradient(to right, hsl(var(--primary)) ${progressPercent}%, hsl(var(--muted)) ${progressPercent}%)`,
+            }}
+          />
+        </div>
         <div className="flex justify-between text-[10px] text-muted-foreground">
           <span>{currentIndex + 1}</span>
           <span>{totalSentences}</span>
