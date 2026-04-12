@@ -380,8 +380,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     goToNext,
     goToPrev,
     goTo,
-    text1: currentSentence ? getSentenceText(currentSentence, settings.language1) : '',
-    text2: currentSentence ? getSentenceText(currentSentence, settings.language2) : '',
+    text1: currentSentence ? getSentenceText(currentSentence, settings.language1, originalLanguage) : '',
+    text2: currentSentence ? getSentenceText(currentSentence, settings.language2, originalLanguage) : '',
     totalSentences: sentences.length,
   };
 }
