@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  generateText,
+  getOpenAIApiKey,
+  OpenAIProviderError,
+} from "../_shared/openai.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +13,12 @@ const corsHeaders = {
 
 function repairAndParseJson(raw: string): unknown {
   // Strip control chars except newlines/tabs
-  let s = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  let s = Array.from(raw)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+    })
+    .join("");
   try { return JSON.parse(s); } catch { /* continue */ }
 
   // Fix trailing commas
@@ -42,7 +52,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const openAIApiKey = getOpenAIApiKey();
 
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
@@ -119,34 +129,9 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
 
     let translations: Array<{ en: string; ru: string; sv: string }>;
     try {
-      const aiResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.2,
-          }),
-        }
-      );
-      if (!aiResponse.ok) {
-        const errBody = await aiResponse.text();
-        console.error("AI gateway error:", aiResponse.status, errBody);
-        return new Response(JSON.stringify({ error: `AI error: ${aiResponse.status}`, details: errBody }), {
-          status: aiResponse.status === 402 ? 402 : aiResponse.status === 429 ? 429 : 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const aiData = await aiResponse.json();
-      let content = aiData.choices?.[0]?.message?.content?.trim();
+      let content = await generateText(openAIApiKey, prompt);
       if (!content) {
-        console.error("No content in AI response:", JSON.stringify(aiData).substring(0, 500));
+        console.error("No content in AI response");
         return new Response(JSON.stringify({ error: "AI returned empty content" }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -158,8 +143,9 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
       translations = repairAndParseJson(content) as Array<{ en: string; ru: string; sv: string }>;
     } catch (aiErr) {
       console.error("AI translation failed:", aiErr);
+      const status = aiErr instanceof OpenAIProviderError && aiErr.status === 429 ? 429 : 500;
       return new Response(JSON.stringify({ error: "Translation failed", details: String(aiErr) }), {
-        status: 500,
+        status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

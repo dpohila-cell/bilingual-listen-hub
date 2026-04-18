@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  generateText,
+  getOpenAIApiKey,
+  isRateLimited,
+} from "../_shared/openai.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,7 +16,12 @@ const MAX_PER_CALL = 25; // 1 AI call per function invocation to avoid timeout
 
 function repairAndParseJson(raw: string): unknown {
   // Strip control chars except newlines/tabs
-  let s = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  let s = Array.from(raw)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+    })
+    .join("");
   try { return JSON.parse(s); } catch { /* continue */ }
 
   // Fix trailing commas
@@ -30,7 +40,7 @@ function repairAndParseJson(raw: string): unknown {
 
 async function translateBatch(
   sentences: Array<{ id: string; original_text: string }>,
-  lovableApiKey: string,
+  openAIApiKey: string,
   originalLanguage: string
 ): Promise<Array<{ en: string; ru: string; sv: string }>> {
   const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
@@ -48,29 +58,7 @@ No extra text, no markdown fences. Just the JSON array.
 Sentences to translate:
 ${sentences.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
 
-  const aiResponse = await fetch(
-    "https://ai.gateway.lovable.dev/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-      }),
-    }
-  );
-
-  if (!aiResponse.ok) {
-    const errText = await aiResponse.text();
-    throw new Error(`AI error ${aiResponse.status}: ${errText}`);
-  }
-
-  const aiData = await aiResponse.json();
-  let content = aiData.choices?.[0]?.message?.content?.trim();
+  let content = await generateText(openAIApiKey, prompt);
   if (!content) throw new Error("AI returned empty content");
   if (content.startsWith("```")) {
     content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
@@ -93,7 +81,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const openAIApiKey = getOpenAIApiKey();
 
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
@@ -149,7 +137,7 @@ Deno.serve(async (req) => {
       const batch = untranslated.slice(i, i + AI_BATCH_SIZE);
 
       try {
-        const translations = await translateBatch(batch, lovableApiKey, originalLanguage);
+        const translations = await translateBatch(batch, openAIApiKey, originalLanguage);
 
         for (let j = 0; j < batch.length; j++) {
           const t = translations[j];
@@ -167,7 +155,7 @@ Deno.serve(async (req) => {
       } catch (err) {
         console.error(`translate-all batch error at ${i}:`, err);
         // If rate limited, stop and let client retry
-        if (String(err).includes("429")) {
+        if (isRateLimited(err)) {
           return new Response(JSON.stringify({
             translated: totalTranslated,
             hasMore: true,

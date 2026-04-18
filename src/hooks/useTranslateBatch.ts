@@ -39,7 +39,7 @@ export function useTranslateBatch(bookId: string | undefined) {
       if (!response.ok) {
         const result = await response.json();
         if (response.status === 402) {
-          toast.error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.');
+          toast.error('AI translation quota exhausted. Please check the configured OpenAI billing or usage limits.');
         } else if (response.status === 429) {
           toast.error('Too many requests. Please wait a moment and try again.');
         } else {

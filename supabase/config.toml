@@ -1,4 +1,4 @@
-project_id = "vundqqkkujufmbfncwbe"
+project_id = "mhsbjqoqljytyskgxckn"
 
 [functions.process-book]
 verify_jwt = false
@@ -10,9 +10,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.translate-all]
-verify_jwt = false
-
-[functions.tts]
 verify_jwt = false
 
 [functions.tts-preview]

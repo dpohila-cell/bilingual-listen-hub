@@ -1,5 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { unzipSync } from "https://esm.sh/fflate@0.8.2";
+import {
+  generateFromPdf,
+  generateText,
+  getOpenAIApiKey,
+} from "../_shared/openai.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -411,7 +416,12 @@ function extractTextFromDoc(bytes: Uint8Array): string {
   // Join and clean up
   let result = textParts.join("\n");
   // Remove control characters except newlines/tabs
-  result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  result = Array.from(result)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || code >= 32;
+    })
+    .join("");
   // Collapse excessive whitespace
   result = result.replace(/ {3,}/g, " ").replace(/\n{3,}/g, "\n\n");
   
@@ -422,8 +432,8 @@ function extractTextFromDoc(bytes: Uint8Array): string {
 
 async function extractTextWithAI(
   fileBytes: Uint8Array,
-  mimeType: string,
-  lovableApiKey: string
+  _mimeType: string,
+  openAIApiKey: string
 ): Promise<string> {
   // Convert to base64
   const base64 = btoa(
@@ -432,70 +442,32 @@ async function extractTextWithAI(
       .join("")
   );
 
-  const dataUrl = `data:${mimeType};base64,${base64}`;
-
-  // Send to Gemini which supports PDF and document understanding
-  const response = await fetch(
-    "https://ai.gateway.lovable.dev/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Extract ALL text content from this document. Return ONLY the raw text, preserving paragraph structure. Do not add any commentary, headers, or formatting. Just the document's text content, paragraph by paragraph.`,
-              },
-              {
-                type: "image_url",
-                image_url: { url: dataUrl },
-              },
-            ],
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 100000,
-      }),
-    }
+  return await generateFromPdf(
+    openAIApiKey,
+    "Extract ALL text content from this document. Return ONLY the raw text, preserving paragraph structure. Do not add any commentary, headers, or formatting. Just the document's text content, paragraph by paragraph.",
+    base64,
+    { filename: "book.pdf" },
   );
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error(`AI extraction failed (${response.status}):`, errText);
-    throw new Error(`AI extraction failed: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) throw new Error("AI returned empty content");
-  return content;
 }
 
 // For large files, we chunk the base64 to stay within AI limits
 async function extractTextFromPdfWithAI(
   bytes: Uint8Array,
-  lovableApiKey: string
+  openAIApiKey: string
 ): Promise<string> {
-  // Gemini supports up to ~20MB inline. For very large PDFs we try as-is.
+  // OpenAI PDF inputs support inline base64 files; warn before larger payloads.
   const maxSize = 15 * 1024 * 1024; // 15MB safety margin
   if (bytes.length > maxSize) {
     console.warn(`PDF is ${(bytes.length / 1024 / 1024).toFixed(1)}MB, may exceed AI limits`);
   }
-  return await extractTextWithAI(bytes, "application/pdf", lovableApiKey);
+  return await extractTextWithAI(bytes, "application/pdf", openAIApiKey);
 }
 
 // ── Translation ─────────────────────────────────────────────────
 
 async function translateBatch(
   sentences: string[],
-  lovableApiKey: string,
+  openAIApiKey: string,
   originalLanguage: string = "en"
 ): Promise<Array<{ en: string | null; ru: string | null; sv: string | null }>> {
   const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
@@ -514,30 +486,7 @@ Sentences to translate:
 ${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
 
   try {
-    const aiResponse = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${lovableApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.2,
-        }),
-      }
-    );
-
-    if (!aiResponse.ok) {
-      console.error("AI gateway error:", aiResponse.status, await aiResponse.text());
-      // Return nulls so background translation can retry later
-      return sentences.map(() => ({ en: null, ru: null, sv: null }));
-    }
-
-    const aiData = await aiResponse.json();
-    let content = aiData.choices?.[0]?.message?.content?.trim();
+    let content = await generateText(openAIApiKey, prompt);
     if (!content) {
       console.error("No content from AI");
       return sentences.map(() => ({ en: null, ru: null, sv: null }));
@@ -577,7 +526,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const openAIApiKey = getOpenAIApiKey();
 
     const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
@@ -644,7 +593,7 @@ Deno.serve(async (req) => {
     if (isPdf(bytes)) {
       // ── PDF: AI-based extraction ──
       console.log("Detected PDF format, extracting via AI...");
-      text = await extractTextFromPdfWithAI(bytes, lovableApiKey);
+      text = await extractTextFromPdfWithAI(bytes, openAIApiKey);
     } else if (isZip(bytes)) {
       // ZIP-based formats: EPUB, DOCX, or FB2 inside ZIP
       const files = unzipSync(bytes);
@@ -693,33 +642,15 @@ Deno.serve(async (req) => {
     const sampleText = sentences.slice(0, 10).join(" ");
     let detectedLanguage = "en"; // fallback
     try {
-      const detectResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-lite",
-            messages: [{
-              role: "user",
-              content: `Detect the language of this text. Reply with ONLY the ISO 639-1 code (e.g. "en", "ru", "sv"). Nothing else.\n\n${sampleText.substring(0, 500)}`,
-            }],
-            temperature: 0,
-            max_tokens: 5,
-          }),
-        }
-      );
-      if (detectResponse.ok) {
-        const detectData = await detectResponse.json();
-        const code = detectData.choices?.[0]?.message?.content?.trim().toLowerCase().replace(/[^a-z]/g, "");
-        if (code && ["en", "ru", "sv"].includes(code)) {
-          detectedLanguage = code;
-        } else if (code) {
-          console.log(`Detected unsupported language: ${code}, defaulting to en`);
-        }
+      const code = (await generateText(
+        openAIApiKey,
+        `Detect the language of this text. Reply with ONLY the ISO 639-1 code (e.g. "en", "ru", "sv"). Nothing else.\n\n${sampleText.substring(0, 500)}`,
+        { maxOutputTokens: 8 },
+      )).trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (code && ["en", "ru", "sv"].includes(code)) {
+        detectedLanguage = code;
+      } else if (code) {
+        console.log(`Detected unsupported language: ${code}, defaulting to en`);
       }
     } catch (e) {
       console.error("Language detection failed, defaulting to en:", e);
@@ -752,7 +683,7 @@ Deno.serve(async (req) => {
 
     // Step 2: Translate only the first 25 sentences
     const firstBatch = sentences.slice(0, 25);
-    const translations = await translateBatch(firstBatch, lovableApiKey, detectedLanguage);
+    const translations = await translateBatch(firstBatch, openAIApiKey, detectedLanguage);
 
     for (let j = 0; j < firstBatch.length; j++) {
       const t = translations[j];

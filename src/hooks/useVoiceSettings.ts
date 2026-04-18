@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { Language, VOICE_OPTIONS } from '@/types';
 
 export interface VoiceSettings {
@@ -75,7 +76,6 @@ export function useVoicePreview() {
     setPreviewingVoice(voiceId);
 
     try {
-      const { supabase } = await import('@/integrations/supabase/client');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
