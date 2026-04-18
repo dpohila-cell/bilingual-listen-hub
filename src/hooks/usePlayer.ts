@@ -176,13 +176,16 @@ export function usePlayer(
   bookId?: string,
   originalLanguage?: Language,
   getVoice?: (language: Language) => string,
+  beforePlaySentence?: (index: number) => Promise<boolean>,
 ) {
   const [currentIndex, _setCurrentIndex] = useState(initialIndex || 0);
   const currentIndexRef = useRef(currentIndex);
   const sentencesRef = useRef(sentences);
   const getVoiceRef = useRef(getVoice);
+  const beforePlaySentenceRef = useRef(beforePlaySentence);
   sentencesRef.current = sentences;
   getVoiceRef.current = getVoice;
+  beforePlaySentenceRef.current = beforePlaySentence;
   const setCurrentIndex = useCallback((idx: number) => {
     currentIndexRef.current = idx;
     _setCurrentIndex(idx);
@@ -253,25 +256,46 @@ export function usePlayer(
 
   const playSentence = useCallback(
     async (index: number, gen: number) => {
-      const currentSentences = sentencesRef.current;
-      if (playGenRef.current !== gen || index >= currentSentences.length || !bookId) {
+      if (playGenRef.current !== gen || index >= sentencesRef.current.length || !bookId) {
         setIsPlaying(false);
         setActiveLang(null);
         setIsLoading(false);
         return;
       }
 
-      const sentence = currentSentences[index];
-      setCurrentIndex(index);
-
-      // Read latest settings from ref so mid-playback changes take effect
-      const s = settingsRef.current;
-      const lang1 = s.playbackOrder === '1-2' ? s.language1 : s.language2;
-      const lang2 = s.playbackOrder === '1-2' ? s.language2 : s.language1;
-      const activeLang1: 1 | 2 = s.playbackOrder === '1-2' ? 1 : 2;
-      const activeLang2: 1 | 2 = s.playbackOrder === '1-2' ? 2 : 1;
-
       try {
+        setActiveLang(null);
+        setIsLoading(true);
+        const ready = beforePlaySentenceRef.current
+          ? await beforePlaySentenceRef.current(index)
+          : true;
+        if (playGenRef.current !== gen) return;
+        if (!ready) {
+          console.warn(`Sentence ${index + 1} not ready for playback`);
+          setIsPlaying(false);
+          setActiveLang(null);
+          setIsLoading(false);
+          return;
+        }
+
+        const currentSentences = sentencesRef.current;
+        const sentence = currentSentences[index];
+        if (!sentence) {
+          setIsPlaying(false);
+          setActiveLang(null);
+          setIsLoading(false);
+          return;
+        }
+
+        setCurrentIndex(index);
+
+        // Read latest settings from ref so mid-playback changes take effect
+        const s = settingsRef.current;
+        const lang1 = s.playbackOrder === '1-2' ? s.language1 : s.language2;
+        const lang2 = s.playbackOrder === '1-2' ? s.language2 : s.language1;
+        const activeLang1: 1 | 2 = s.playbackOrder === '1-2' ? 1 : 2;
+        const activeLang2: 1 | 2 = s.playbackOrder === '1-2' ? 2 : 1;
+
         // Wait for first audio file to be ready
         setActiveLang(activeLang1);
         setIsLoading(true);

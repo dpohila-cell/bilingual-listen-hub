@@ -49,13 +49,13 @@ export function useGenerateAudio(bookId: string | undefined) {
     forceRegenerate?: boolean,
     silent?: boolean, // don't show progress UI for background prefetch
   ) => {
-    if (!bookId) return;
+    if (!bookId) return false;
 
     // Check if this range was already generated (unless forcing)
     const langKey = `${language}-${voice || 'default'}`;
     const ranges = generatedRangesRef.current[langKey] || new Set<number>();
     if (!forceRegenerate) {
-      if (ranges.has(startOrder)) return;
+      if (ranges.has(startOrder)) return true;
     }
 
     if (!silent) {
@@ -89,7 +89,9 @@ export function useGenerateAudio(bookId: string | undefined) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed');
 
-      if (!forceRegenerate && !result.skippedMissingTranslation) {
+      const ready = !result.skippedMissingTranslation && !result.errors;
+
+      if (!forceRegenerate && ready) {
         ranges.add(startOrder);
         generatedRangesRef.current[langKey] = ranges;
       }
@@ -100,11 +102,14 @@ export function useGenerateAudio(bookId: string | undefined) {
       if (!silent) {
         setState(s => ({ ...s, isGenerating: false, progress: '' }));
       }
+
+      return ready;
     } catch (err: any) {
       if (!silent) {
         setState({ isGenerating: false, progress: '', error: err.message });
       }
       console.error('Audio batch generation error:', err);
+      return false;
     }
   }, [bookId]);
 
@@ -117,7 +122,7 @@ export function useGenerateAudio(bookId: string | undefined) {
     forceRegenerate?: boolean,
     silent?: boolean,
   ) => {
-    if (!bookId) return;
+    if (!bookId) return false;
 
     const force1 = forceRegenerate || shouldForceRegenerate(bookId, lang1, voice1);
     const force2 = forceRegenerate || shouldForceRegenerate(bookId, lang2, voice2);
@@ -130,7 +135,7 @@ export function useGenerateAudio(bookId: string | undefined) {
       setState({ isGenerating: true, progress: `Generating audio…`, error: null });
     }
 
-    await Promise.all([
+    const results = await Promise.all([
       generateBatch(lang1, startOrder, voice1, force1, silent),
       generateBatch(lang2, startOrder, voice2, force2, silent),
     ]);
@@ -138,6 +143,8 @@ export function useGenerateAudio(bookId: string | undefined) {
     if (!silent) {
       setState({ isGenerating: false, progress: '', error: null });
     }
+
+    return results.every(Boolean);
   }, [bookId, generateBatch, resetRanges]);
 
   return { ...state, generateBatch, generateBothBatch, resetRanges };

@@ -44,6 +44,31 @@ async function fetchAllSentences(bookId: string) {
   return allData;
 }
 
+function sanitizeStorageSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function getAudioPublicUrl(bookId: string, language: Language, voice: string, sentenceOrder: number): string {
+  const { data } = supabase.storage
+    .from('audio')
+    .getPublicUrl(`${bookId}/${language}/${sanitizeStorageSegment(voice)}/${String(sentenceOrder).padStart(5, '0')}.mp3`);
+  return `${data.publicUrl}?ready=${Date.now()}`;
+}
+
+async function waitForAudioReady(bookId: string, language: Language, voice: string, sentenceOrder: number, maxWaitMs = 15000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < maxWaitMs) {
+    try {
+      const response = await fetch(getAudioPublicUrl(bookId, language, voice, sentenceOrder), { method: 'HEAD' });
+      if (response.ok) return true;
+    } catch {
+      // Continue polling briefly while storage metadata propagates.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
 export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -58,6 +83,12 @@ export default function Player() {
   const lastPrefetchTriggerRef = useRef<number>(-1);
   const translateAndRefetchRef = useRef<number>(0);
   const autoplayStartedRef = useRef(false);
+  const playbackGateRef = useRef<((index: number) => Promise<boolean>) | null>(null);
+  const [isPreparingPlayback, setIsPreparingPlayback] = useState(false);
+
+  const runPlaybackGate = useCallback((index: number) => {
+    return playbackGateRef.current ? playbackGateRef.current(index) : Promise.resolve(true);
+  }, []);
 
 
   const { data: book, isLoading: bookLoading } = useQuery({
@@ -160,20 +191,65 @@ export default function Player() {
     setSettings,
     play,
     pause,
-    togglePlay,
     goToNext,
     goToPrev,
     goTo,
     text1,
     text2,
     totalSentences,
-  } = usePlayer(sentences, savedProgress, bookId, originalLanguage, getVoice);
+  } = usePlayer(sentences, savedProgress, bookId, originalLanguage, getVoice, runPlaybackGate);
 
-  const getSentenceOrder = (index: number) => {
+  const getSentenceOrder = useCallback((index: number) => {
     if (sentences.length === 0) return 1;
     const clamped = Math.max(0, Math.min(index, sentences.length - 1));
     return sentences[clamped].sentenceOrder;
-  };
+  }, [sentences]);
+
+  const ensureSentenceReady = useCallback(async (index: number, silent = false) => {
+    if (!bookId || book?.status !== 'ready' || sentences.length === 0) return false;
+    const order = getSentenceOrder(index);
+
+    if (!silent) setIsPreparingPlayback(true);
+    try {
+      await ensureTranslated(order);
+      const v1 = getVoice(settings.language1);
+      const v2 = getVoice(settings.language2);
+      let generated = await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, silent);
+
+      if (!generated) {
+        await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
+        await ensureTranslated(order);
+        generated = await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, silent);
+      }
+
+      const [audio1Ready, audio2Ready] = await Promise.all([
+        waitForAudioReady(bookId, settings.language1, v1, order),
+        waitForAudioReady(bookId, settings.language2, v2, order),
+      ]);
+
+      await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return Boolean(generated && audio1Ready && audio2Ready);
+    } finally {
+      if (!silent) setIsPreparingPlayback(false);
+    }
+  }, [
+    bookId,
+    book?.status,
+    sentences.length,
+    getSentenceOrder,
+    ensureTranslated,
+    getVoice,
+    settings.language1,
+    settings.language2,
+    generateBothBatch,
+    queryClient,
+  ]);
+
+  useEffect(() => {
+    playbackGateRef.current = (index: number) => ensureSentenceReady(index, false);
+  }, [ensureSentenceReady]);
 
   useEffect(() => {
     if (searchParams.get('autoplay') !== '1') return;
@@ -181,16 +257,9 @@ export default function Player() {
     if (!bookId || book?.status !== 'ready' || sentences.length === 0 || isGenerating) return;
 
     autoplayStartedRef.current = true;
-    void (async () => {
-      const order = getSentenceOrder(0);
-      await ensureTranslated(order);
-      const v1 = getVoice(settings.language1);
-      const v2 = getVoice(settings.language2);
-      await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
-      play();
-      setSearchParams({}, { replace: true });
-    })();
-  }, [searchParams, bookId, book?.status, sentences.length, isGenerating, ensureTranslated, getVoice, generateBothBatch, settings.language1, settings.language2, play, setSearchParams]);
+    play();
+    setSearchParams({}, { replace: true });
+  }, [searchParams, bookId, book?.status, sentences.length, isGenerating, play, setSearchParams]);
 
   // Auto-generate audio when player opens or voice/language changes
   useEffect(() => {
@@ -281,15 +350,13 @@ export default function Player() {
     goTo(newIndex);
 
     if (bookId && book?.status === 'ready') {
-      const order = getSentenceOrder(newIndex);
-      void (async () => {
-        await ensureTranslated(order);
-        const v1 = getVoice(settings.language1);
-        const v2 = getVoice(settings.language2);
-        await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
-        if (shouldResume) play();
-      })();
+      if (shouldResume) play();
     }
+  };
+
+  const handlePlayPause = () => {
+    if (isPlaying) pause();
+    else play();
   };
 
   return (
@@ -379,10 +446,10 @@ export default function Player() {
             <span>Translating sentences…</span>
           </div>
         )}
-        {isGenerating && !isTranslating && (
+        {(isPreparingPlayback || isGenerating) && !isTranslating && (
           <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>{genProgress || 'Preparing audio…'}</span>
+            <span>{isPreparingPlayback ? 'Preparing current sentence...' : genProgress || 'Preparing audio…'}</span>
           </div>
         )}
         {genError && <p className="mt-2 text-center text-xs text-destructive">{genError}</p>}
@@ -399,7 +466,7 @@ export default function Player() {
         <div className="mx-auto max-w-lg">
         <PlayerControls
           isPlaying={isPlaying}
-          onPlayPause={togglePlay}
+          onPlayPause={handlePlayPause}
           onPrev={goToPrev}
           onNext={goToNext}
           onRewind={goToPrev}
