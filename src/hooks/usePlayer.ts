@@ -32,6 +32,9 @@ function loadBookSettings(bookId: string, originalLanguage: Language): PlaybackS
     const stored = localStorage.getItem(`player-settings-${bookId}`);
     if (stored) {
       const parsed = JSON.parse(stored);
+      if (parsed.originalLanguage !== originalLanguage) {
+        return getDefaultSettings(originalLanguage);
+      }
       if (parsed.language1 && parsed.language2 && parsed.language1 !== parsed.language2) {
         return { ...getDefaultSettings(originalLanguage), ...parsed };
       }
@@ -40,9 +43,9 @@ function loadBookSettings(bookId: string, originalLanguage: Language): PlaybackS
   return getDefaultSettings(originalLanguage);
 }
 
-function saveBookSettings(bookId: string, settings: PlaybackSettings) {
+function saveBookSettings(bookId: string, settings: PlaybackSettings, originalLanguage: Language) {
   try {
-    localStorage.setItem(`player-settings-${bookId}`, JSON.stringify(settings));
+    localStorage.setItem(`player-settings-${bookId}`, JSON.stringify({ ...settings, originalLanguage }));
   } catch {}
 }
 
@@ -214,10 +217,10 @@ export function usePlayer(
 
   const setSettings = useCallback((newSettings: PlaybackSettings) => {
     _setSettings(newSettings);
-    if (bookId) {
-      saveBookSettings(bookId, newSettings);
+    if (bookId && originalLanguage) {
+      saveBookSettings(bookId, newSettings, originalLanguage);
     }
-  }, [bookId]);
+  }, [bookId, originalLanguage]);
 
   const playGenRef = useRef(0);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
