@@ -128,6 +128,7 @@ async function waitForAudioFile(bookId: string, language: Language, voice: strin
 function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
     let resolved = false;
+    const normalizedSpeed = Number.isFinite(speed) ? Math.min(2, Math.max(0.5, speed)) : 1;
 
     const done = (result: 'played' | 'skipped') => {
       if (resolved) return;
@@ -137,6 +138,10 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
     };
 
     const onEnded = () => { done('played'); };
+    const applySpeed = () => {
+      audio.defaultPlaybackRate = normalizedSpeed;
+      audio.playbackRate = normalizedSpeed;
+    };
     const onError = () => {
       // File was confirmed via HEAD but failed to play — stop and skip
       audio.pause();
@@ -148,14 +153,18 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
     const cleanup = () => {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
+      audio.removeEventListener('loadedmetadata', applySpeed);
+      audio.removeEventListener('canplay', applySpeed);
     };
 
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
+    audio.addEventListener('loadedmetadata', applySpeed);
+    audio.addEventListener('canplay', applySpeed);
 
-    audio.playbackRate = speed;
     audio.currentTime = 0;
     audio.src = url;
+    applySpeed();
     audio.play().catch(() => {
       // play() rejected — skip after timeout if no error event fires
       setTimeout(() => {
@@ -227,6 +236,15 @@ export function usePlayer(
 
   const playGenRef = useRef(0);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!currentAudioRef.current) return;
+    const normalizedSpeed = Number.isFinite(settings.playbackSpeed)
+      ? Math.min(2, Math.max(0.5, settings.playbackSpeed))
+      : 1;
+    currentAudioRef.current.defaultPlaybackRate = normalizedSpeed;
+    currentAudioRef.current.playbackRate = normalizedSpeed;
+  }, [settings.playbackSpeed]);
 
   const stopCurrent = useCallback(() => {
     playGenRef.current += 1;
@@ -316,7 +334,7 @@ export function usePlayer(
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
-        await wait(settingsRef.current.pauseDuration * 1000, gen);
+        await wait(Math.max(0, settingsRef.current.pauseDuration) * 1000, gen);
         if (playGenRef.current !== gen) return;
 
         // Wait for second audio file to be ready
@@ -338,7 +356,7 @@ export function usePlayer(
         if (playGenRef.current !== gen) return;
 
         setActiveLang(null);
-        await wait(settingsRef.current.pauseDuration * 500, gen);
+        await wait(Math.max(0, settingsRef.current.pauseDuration) * 1000, gen);
         if (playGenRef.current !== gen) return;
 
         playSentence(index + 1, gen);
