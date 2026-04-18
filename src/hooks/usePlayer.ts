@@ -70,8 +70,7 @@ export function clearAudioCache() {
 }
 
 function buildAudioUrl(bookId: string, language: Language, voice: string, sentenceOrder: number): string {
-  const url = getAudioUrl(bookId, language, voice, sentenceOrder);
-  return `${url}?t=${Date.now()}`;
+  return getAudioUrl(bookId, language, voice, sentenceOrder);
 }
 
 // Two reusable audio elements — unlocked once from user gesture on iOS
@@ -318,7 +317,9 @@ export function usePlayer(
         setActiveLang(activeLang1);
         setIsLoading(true);
         const voice1 = getVoiceRef.current?.(lang1) || getDefaultVoice(lang1);
-        const url1 = await waitForAudioFile(bookId, lang1, voice1, sentence.sentenceOrder);
+        const url1 = beforePlaySentenceRef.current
+          ? buildAudioUrl(bookId, lang1, voice1, sentence.sentenceOrder)
+          : await waitForAudioFile(bookId, lang1, voice1, sentence.sentenceOrder);
         if (playGenRef.current !== gen) return;
         if (!url1) {
           // File never became available — skip this sentence entirely
@@ -341,7 +342,9 @@ export function usePlayer(
         setActiveLang(activeLang2);
         setIsLoading(true);
         const voice2 = getVoiceRef.current?.(lang2) || getDefaultVoice(lang2);
-        const url2 = await waitForAudioFile(bookId, lang2, voice2, sentence.sentenceOrder);
+        const url2 = beforePlaySentenceRef.current
+          ? buildAudioUrl(bookId, lang2, voice2, sentence.sentenceOrder)
+          : await waitForAudioFile(bookId, lang2, voice2, sentence.sentenceOrder);
         if (playGenRef.current !== gen) return;
         if (!url2) {
           console.warn(`Skipping sentence ${sentence.sentenceOrder}: lang2 audio not ready`);

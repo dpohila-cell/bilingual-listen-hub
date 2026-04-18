@@ -52,7 +52,7 @@ function getAudioPublicUrl(bookId: string, language: Language, voice: string, se
   const { data } = supabase.storage
     .from('audio')
     .getPublicUrl(`${bookId}/${language}/${sanitizeStorageSegment(voice)}/${String(sentenceOrder).padStart(5, '0')}.mp3`);
-  return `${data.publicUrl}?ready=${Date.now()}`;
+  return data.publicUrl;
 }
 
 async function waitForAudioReady(bookId: string, language: Language, voice: string, sentenceOrder: number, maxWaitMs = 15000) {
@@ -69,6 +69,47 @@ async function waitForAudioReady(bookId: string, language: Language, voice: stri
   return false;
 }
 
+function preloadAudio(url: string, cache?: Map<string, HTMLAudioElement>, maxWaitMs = 5000) {
+  return new Promise<boolean>((resolve) => {
+    const existing = cache?.get(url);
+    if (existing && existing.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+      resolve(true);
+      return;
+    }
+
+    const audio = existing || new Audio();
+    if (!existing) cache?.set(url, audio);
+    let resolved = false;
+    const done = (ready: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(ready);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      audio.removeEventListener('canplay', onReady);
+      audio.removeEventListener('canplaythrough', onReady);
+      audio.removeEventListener('loadeddata', onReady);
+      audio.removeEventListener('error', onError);
+    };
+    const onReady = () => done(true);
+    const onError = () => done(false);
+    const timer = setTimeout(() => done(audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA), maxWaitMs);
+
+    audio.preload = 'auto';
+    audio.addEventListener('canplay', onReady);
+    audio.addEventListener('canplaythrough', onReady);
+    audio.addEventListener('loadeddata', onReady);
+    audio.addEventListener('error', onError);
+    audio.src = url;
+    audio.load();
+  });
+}
+
+const PREPARE_BATCH_SIZE = 10;
+const PREPARE_NEXT_WHEN_REMAINING = 5;
+
 export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -84,6 +125,9 @@ export default function Player() {
   const translateAndRefetchRef = useRef<number>(0);
   const autoplayStartedRef = useRef(false);
   const playbackGateRef = useRef<((index: number) => Promise<boolean>) | null>(null);
+  const preparedSentencesRef = useRef<Set<string>>(new Set());
+  const preparingBatchesRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const preloadedAudioRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [isPreparingPlayback, setIsPreparingPlayback] = useState(false);
 
   const runPlaybackGate = useCallback((index: number) => {
@@ -205,47 +249,120 @@ export default function Player() {
     return sentences[clamped].sentenceOrder;
   }, [sentences]);
 
-  const ensureSentenceReady = useCallback(async (index: number, silent = false) => {
+  const getPreparationKey = useCallback((sentenceOrder: number) => {
+    if (!bookId) return '';
+    const v1 = getVoice(settings.language1);
+    const v2 = getVoice(settings.language2);
+    return `${bookId}:${settings.language1}:${v1}:${settings.language2}:${v2}:${sentenceOrder}`;
+  }, [bookId, getVoice, settings.language1, settings.language2]);
+
+  const isSentencePrepared = useCallback((index: number) => {
+    if (sentences.length === 0) return false;
+    return preparedSentencesRef.current.has(getPreparationKey(getSentenceOrder(index)));
+  }, [getPreparationKey, getSentenceOrder, sentences.length]);
+
+  const prepareBatchForIndex = useCallback(async (index: number, silent = true) => {
     if (!bookId || book?.status !== 'ready' || sentences.length === 0) return false;
-    const order = getSentenceOrder(index);
 
-    if (!silent) setIsPreparingPlayback(true);
-    try {
-      await ensureTranslated(order);
-      const v1 = getVoice(settings.language1);
-      const v2 = getVoice(settings.language2);
-      let generated = await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, silent);
+    const batchStartIndex = Math.floor(Math.max(0, index) / PREPARE_BATCH_SIZE) * PREPARE_BATCH_SIZE;
+    const batchSentences = sentences.slice(batchStartIndex, batchStartIndex + PREPARE_BATCH_SIZE);
+    if (batchSentences.length === 0) return false;
 
-      if (!generated) {
+    const v1 = getVoice(settings.language1);
+    const v2 = getVoice(settings.language2);
+    const batchStartOrder = batchSentences[0].sentenceOrder;
+    const batchKey = `${bookId}:${settings.language1}:${v1}:${settings.language2}:${v2}:${batchStartOrder}`;
+
+    const allPrepared = batchSentences.every((sentence) =>
+      preparedSentencesRef.current.has(getPreparationKey(sentence.sentenceOrder))
+    );
+    if (allPrepared) return true;
+
+    const existing = preparingBatchesRef.current.get(batchKey);
+    if (existing) return existing;
+
+    const task = (async () => {
+      if (!silent) setIsPreparingPlayback(true);
+      try {
+        await ensureTranslated(batchStartOrder);
+        let generated = await generateBothBatch(
+          settings.language1,
+          settings.language2,
+          batchStartOrder,
+          v1,
+          v2,
+          false,
+          silent,
+        );
+
+        if (!generated) {
+          await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
+          await ensureTranslated(batchStartOrder);
+          generated = await generateBothBatch(
+            settings.language1,
+            settings.language2,
+            batchStartOrder,
+            v1,
+            v2,
+            false,
+            silent,
+          );
+        }
+
+        if (!generated) return false;
+
+        const readiness = await Promise.all(batchSentences.map(async (sentence) => {
+          const urls = [
+            getAudioPublicUrl(bookId, settings.language1, v1, sentence.sentenceOrder),
+            getAudioPublicUrl(bookId, settings.language2, v2, sentence.sentenceOrder),
+          ];
+          const [audio1Ready, audio2Ready] = await Promise.all([
+            waitForAudioReady(bookId, settings.language1, v1, sentence.sentenceOrder),
+            waitForAudioReady(bookId, settings.language2, v2, sentence.sentenceOrder),
+          ]);
+          if (!audio1Ready || !audio2Ready) return false;
+
+          const [audio1Preloaded, audio2Preloaded] = await Promise.all([
+            preloadAudio(urls[0], preloadedAudioRef.current),
+            preloadAudio(urls[1], preloadedAudioRef.current),
+          ]);
+          if (audio1Preloaded && audio2Preloaded) {
+            preparedSentencesRef.current.add(getPreparationKey(sentence.sentenceOrder));
+            return true;
+          }
+          return false;
+        }));
+
         await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
-        await ensureTranslated(order);
-        generated = await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, silent);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        return readiness.every(Boolean);
+      } finally {
+        if (!silent) setIsPreparingPlayback(false);
+        preparingBatchesRef.current.delete(batchKey);
       }
+    })();
 
-      const [audio1Ready, audio2Ready] = await Promise.all([
-        waitForAudioReady(bookId, settings.language1, v1, order),
-        waitForAudioReady(bookId, settings.language2, v2, order),
-      ]);
-
-      await queryClient.refetchQueries({ queryKey: ['sentences', bookId] });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      return Boolean(generated && audio1Ready && audio2Ready);
-    } finally {
-      if (!silent) setIsPreparingPlayback(false);
-    }
+    preparingBatchesRef.current.set(batchKey, task);
+    return task;
   }, [
     bookId,
     book?.status,
-    sentences.length,
-    getSentenceOrder,
-    ensureTranslated,
+    sentences,
     getVoice,
     settings.language1,
     settings.language2,
+    getPreparationKey,
+    ensureTranslated,
     generateBothBatch,
     queryClient,
   ]);
+
+  const ensureSentenceReady = useCallback(async (index: number, silent = false) => {
+    if (isSentencePrepared(index)) return true;
+    await prepareBatchForIndex(index, silent);
+    return isSentencePrepared(index);
+  }, [isSentencePrepared, prepareBatchForIndex]);
 
   useEffect(() => {
     playbackGateRef.current = (index: number) => ensureSentenceReady(index, false);
@@ -274,34 +391,34 @@ export default function Player() {
     if (audioTriggeredRef.current !== voiceKey) {
       audioTriggeredRef.current = voiceKey;
       lastPrefetchTriggerRef.current = -1;
+      preparedSentencesRef.current.clear();
+      preparingBatchesRef.current.clear();
+      preloadedAudioRef.current.clear();
       resetRanges();
     }
 
-    const order = getSentenceOrder(currentIndex);
-    generateBothBatch(lang1, lang2, order, v1, v2, false, false);
-  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges, sentences]);
+    void prepareBatchForIndex(currentIndex, false);
+  }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, getVoice, resetRanges, sentences.length, currentIndex, prepareBatchForIndex, isGenerating, progressFetched]);
 
-  // Prefetch audio every 5 sentences (also ensure translations exist ahead)
+  // Keep the current 10-sentence batch prepared, then prepare the next batch when 5 prepared sentences remain.
   useEffect(() => {
     if (!bookId || !book || book.status !== 'ready' || sentences.length === 0) return;
 
-    const triggerPoint = Math.floor(currentIndex / 5) * 5;
-    if (triggerPoint <= lastPrefetchTriggerRef.current) return;
-    if (lastPrefetchTriggerRef.current === -1 && triggerPoint === 0) {
-      lastPrefetchTriggerRef.current = 0;
-      return;
-    }
+    void prepareBatchForIndex(currentIndex, true);
 
-    lastPrefetchTriggerRef.current = triggerPoint;
-    const nextBatchStart = getSentenceOrder(Math.min(triggerPoint + 5, sentences.length - 1));
-    
-    // Ensure translations exist before generating audio
-    ensureTranslated(nextBatchStart).then(() => {
-      const v1 = getVoice(settings.language1);
-      const v2 = getVoice(settings.language2);
-      generateBothBatch(settings.language1, settings.language2, nextBatchStart, v1, v2, false, true);
-    });
-  }, [currentIndex, bookId, book?.status, settings.language1, settings.language2, generateBothBatch, getVoice, sentences, ensureTranslated]);
+    const batchStartIndex = Math.floor(currentIndex / PREPARE_BATCH_SIZE) * PREPARE_BATCH_SIZE;
+    const batchEndIndex = Math.min(batchStartIndex + PREPARE_BATCH_SIZE - 1, sentences.length - 1);
+    const remainingPrepared = batchEndIndex - currentIndex;
+    const nextBatchStartIndex = batchEndIndex + 1;
+    if (
+      remainingPrepared <= PREPARE_NEXT_WHEN_REMAINING &&
+      nextBatchStartIndex < sentences.length &&
+      nextBatchStartIndex !== lastPrefetchTriggerRef.current
+    ) {
+      lastPrefetchTriggerRef.current = nextBatchStartIndex;
+      void prepareBatchForIndex(nextBatchStartIndex, true);
+    }
+  }, [currentIndex, bookId, book?.status, sentences.length, prepareBatchForIndex]);
 
   // Save progress
   useEffect(() => {
@@ -347,11 +464,24 @@ export default function Player() {
     const shouldResume = isPlaying || needsTranslation;
 
     if (isPlaying) pause();
-    goTo(newIndex);
 
     if (bookId && book?.status === 'ready') {
-      if (shouldResume) play();
+      if (isSentencePrepared(newIndex)) {
+        goTo(newIndex);
+        if (shouldResume) play();
+        return;
+      }
+
+      void (async () => {
+        const ready = await ensureSentenceReady(newIndex, false);
+        if (!ready) return;
+        goTo(newIndex);
+        if (shouldResume) play();
+      })();
+      return;
     }
+
+    goTo(newIndex);
   };
 
   const handlePlayPause = () => {
