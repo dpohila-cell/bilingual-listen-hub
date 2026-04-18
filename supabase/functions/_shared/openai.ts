@@ -145,3 +145,9 @@ export function isRateLimited(error: unknown): boolean {
     ? error.status === 429
     : String(error).includes("429");
 }
+
+export function isInsufficientQuota(error: unknown): boolean {
+  return error instanceof OpenAIProviderError
+    ? error.details.includes("insufficient_quota")
+    : String(error).includes("insufficient_quota");
+}

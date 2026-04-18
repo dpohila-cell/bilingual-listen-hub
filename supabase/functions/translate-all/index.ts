@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   generateText,
   getOpenAIApiKey,
+  isInsufficientQuota,
   isRateLimited,
 } from "../_shared/openai.ts";
 
@@ -13,6 +14,31 @@ const corsHeaders = {
 
 const AI_BATCH_SIZE = 25;
 const MAX_PER_CALL = 25; // 1 AI call per function invocation to avoid timeout
+
+async function logFunctionEvent(
+  supabase: ReturnType<typeof createClient>,
+  level: "info" | "error",
+  message: string,
+  options: { bookId?: string; details?: unknown } = {},
+) {
+  try {
+    const details = typeof options.details === "string"
+      ? options.details
+      : options.details
+        ? JSON.stringify(options.details)
+        : null;
+
+    await supabase.from("function_logs").insert({
+      function_name: "translate-all",
+      level,
+      book_id: options.bookId ?? null,
+      message,
+      details: details ? details.slice(0, 5000) : null,
+    });
+  } catch (logError) {
+    console.error("Failed to write function log:", logError);
+  }
+}
 
 function repairAndParseJson(raw: string): unknown {
   // Strip control chars except newlines/tabs
@@ -102,9 +128,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    await logFunctionEvent(supabase, "info", "translate-all invoked", { bookId });
+
     const { data: book } = await supabase
       .from("books").select("id, user_id, original_language").eq("id", bookId).single();
     if (!book || book.user_id !== user.id) {
+      await logFunctionEvent(supabase, "error", "book not found or not owned", {
+        bookId,
+        details: { userId: user.id },
+      });
       return new Response(JSON.stringify({ error: "Not found or not owned" }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -124,12 +156,17 @@ Deno.serve(async (req) => {
     if (fetchErr) throw fetchErr;
 
     if (!untranslated || untranslated.length === 0) {
+      await logFunctionEvent(supabase, "info", "no untranslated sentences found", { bookId });
       return new Response(JSON.stringify({ message: "All translated", translated: 0, hasMore: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     console.log(`translate-all: processing ${untranslated.length} sentences for book ${bookId}`);
+    await logFunctionEvent(supabase, "info", "processing untranslated sentences", {
+      bookId,
+      details: { count: untranslated.length, originalLanguage },
+    });
 
     let totalTranslated = 0;
 
@@ -154,14 +191,39 @@ Deno.serve(async (req) => {
         }
       } catch (err) {
         console.error(`translate-all batch error at ${i}:`, err);
+        if (isInsufficientQuota(err)) {
+          await logFunctionEvent(supabase, "error", "OpenAI quota exhausted", {
+            bookId,
+            details: String(err),
+          });
+          return new Response(JSON.stringify({
+            error: "OpenAI quota exhausted",
+            details: "OpenAI returned insufficient_quota. Check API billing, credits, and project limits.",
+            translated: totalTranslated,
+            hasMore: true,
+          }), {
+            status: 402,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
         // If rate limited, stop and let client retry
         if (isRateLimited(err)) {
+          await logFunctionEvent(supabase, "error", "rate limited by OpenAI", {
+            bookId,
+            details: String(err),
+          });
           return new Response(JSON.stringify({
             translated: totalTranslated,
             hasMore: true,
             retryAfter: 10,
           }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+
+        await logFunctionEvent(supabase, "error", "translation failed", {
+          bookId,
+          details: String(err),
+        });
 
         return new Response(JSON.stringify({
           error: "Translation failed",
@@ -185,6 +247,10 @@ Deno.serve(async (req) => {
     const hasMore = (count || 0) > 0;
 
     console.log(`translate-all: ${totalTranslated} done, hasMore: ${hasMore}`);
+    await logFunctionEvent(supabase, "info", "translation batch completed", {
+      bookId,
+      details: { totalTranslated, hasMore },
+    });
 
     return new Response(
       JSON.stringify({ success: true, translated: totalTranslated, hasMore }),

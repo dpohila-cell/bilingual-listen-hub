@@ -49,7 +49,11 @@ export function useBackgroundTranslation(bookId: string | undefined, bookReady: 
               // Keep the status-only message if the function returned non-JSON.
             }
             console.error('Background translation error:', response.status, message);
-            toast.error('Translation failed. Check OpenAI billing/model access or Supabase function logs.');
+            if (response.status === 402) {
+              toast.error('OpenAI quota exhausted. Check API billing, credits, and project limits.');
+            } else {
+              toast.error('Translation failed. Check OpenAI billing/model access or Supabase function logs.');
+            }
             break;
           }
 

@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   generateText,
   getOpenAIApiKey,
+  isInsufficientQuota,
   OpenAIProviderError,
 } from "../_shared/openai.ts";
 
@@ -143,7 +144,11 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
       translations = repairAndParseJson(content) as Array<{ en: string; ru: string; sv: string }>;
     } catch (aiErr) {
       console.error("AI translation failed:", aiErr);
-      const status = aiErr instanceof OpenAIProviderError && aiErr.status === 429 ? 429 : 500;
+      const status = isInsufficientQuota(aiErr)
+        ? 402
+        : aiErr instanceof OpenAIProviderError && aiErr.status === 429
+          ? 429
+          : 500;
       return new Response(JSON.stringify({ error: "Translation failed", details: String(aiErr) }), {
         status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
