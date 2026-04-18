@@ -167,6 +167,26 @@ function splitIntoSentences(text: string): string[] {
   */
 }
 
+function getLanguageSample(sentences: string[]): string {
+  const usefulSentences = sentences
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 20);
+  const source = usefulSentences.length > 0 ? usefulSentences : sentences;
+  return source.slice(0, 80).join(" ").slice(0, 4000);
+}
+
+function detectLanguageByScript(text: string): "ru" | "sv" | null {
+  const cyrillicCount = (text.match(/[\u0400-\u052F]/g) || []).length;
+  const latinCount = (text.match(/[A-Za-z\u00C0-\u024F]/g) || []).length;
+  const swedishCount = (text.match(/[\u00C5\u00C4\u00D6\u00E5\u00E4\u00F6]/g) || []).length;
+  const letterCount = cyrillicCount + latinCount;
+
+  if (letterCount < 20) return null;
+  if (cyrillicCount >= 40 || cyrillicCount / letterCount >= 0.25) return "ru";
+  if (swedishCount >= 8 && swedishCount / Math.max(latinCount, 1) >= 0.01) return "sv";
+  return null;
+}
+
 // ── Encoding detection for plain text ───────────────────────────
 
 function decodeText(buffer: ArrayBuffer): string {
@@ -717,24 +737,27 @@ Deno.serve(async (req) => {
 
     console.log(`Total sentences found: ${sentences.length}`);
 
-    // ── Auto-detect language from first ~10 sentences ──
-    const sampleText = sentences.slice(0, 10).join(" ");
-    let detectedLanguage = "en"; // fallback
-    try {
-      const code = (await generateText(
-        openAIApiKey,
-        `Detect the language of this text. Reply with ONLY the ISO 639-1 code (e.g. "en", "ru", "sv"). Nothing else.\n\n${sampleText.substring(0, 500)}`,
-        { maxOutputTokens: 8 },
-      )).trim().toLowerCase().replace(/[^a-z]/g, "");
-      if (code && ["en", "ru", "sv"].includes(code)) {
-        detectedLanguage = code;
-      } else if (code) {
-        console.log(`Detected unsupported language: ${code}, defaulting to en`);
+    // ── Auto-detect language from a representative sample ──
+    const sampleText = getLanguageSample(sentences);
+    const scriptDetectedLanguage = detectLanguageByScript(sampleText);
+    let detectedLanguage = scriptDetectedLanguage || "en"; // fallback
+    if (!scriptDetectedLanguage) {
+      try {
+        const code = (await generateText(
+          openAIApiKey,
+          `Detect the primary language of this book excerpt. Reply with ONLY one ISO 639-1 code from this exact set: en, ru, sv. If the text is Russian, reply ru. If the text is Swedish, reply sv. If the text is English, reply en. Nothing else.\n\n${sampleText}`,
+          { maxOutputTokens: 8 },
+        )).trim().toLowerCase().replace(/[^a-z]/g, "");
+        if (code && ["en", "ru", "sv"].includes(code)) {
+          detectedLanguage = code;
+        } else if (code) {
+          console.log(`Detected unsupported language: ${code}, defaulting to en`);
+        }
+      } catch (e) {
+        console.error("Language detection failed, defaulting to en:", e);
       }
-    } catch (e) {
-      console.error("Language detection failed, defaulting to en:", e);
     }
-    console.log(`Detected language: ${detectedLanguage}`);
+    console.log(`Detected language: ${detectedLanguage} (${scriptDetectedLanguage ? "script" : "ai"})`);
 
     // Update book with detected language
     await supabase.from("books").update({ original_language: detectedLanguage }).eq("id", bookId);
