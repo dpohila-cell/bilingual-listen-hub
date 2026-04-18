@@ -56,7 +56,7 @@ export function SentenceDisplay({
               </motion.span>
             )}
           </div>
-          <p className="font-serif text-lg font-normal leading-relaxed [font-weight:400]">
+          <p className="font-sans text-lg font-normal leading-relaxed [font-weight:400]">
             {text1 || <span className="text-muted-foreground italic">Translating…</span>}
           </p>
         </motion.div>
@@ -88,7 +88,7 @@ export function SentenceDisplay({
               </motion.span>
             )}
           </div>
-          <p className="font-serif text-lg font-normal leading-relaxed [font-weight:400]">
+          <p className="font-sans text-lg font-normal leading-relaxed [font-weight:400]">
             {isTranslating
               ? <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></span>
               : text2 || <span className="text-muted-foreground italic">Translating…</span>}
