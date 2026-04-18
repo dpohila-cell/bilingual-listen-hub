@@ -14,22 +14,7 @@ export default defineConfig(() => ({
   },
   plugins: [react()],
   build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-
-          if (id.includes("@supabase")) return "supabase";
-          if (id.includes("@radix-ui")) return "radix-ui";
-          if (id.includes("@tanstack")) return "query";
-          if (id.includes("framer-motion")) return "motion";
-          if (id.includes("react")) return "react";
-          if (id.includes("lucide-react")) return "icons";
-
-          return "vendor";
-        },
-      },
-    },
+    chunkSizeWarningLimit: 1000,
   },
   resolve: {
     alias: {
