@@ -162,6 +162,16 @@ Deno.serve(async (req) => {
             retryAfter: 10,
           }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+
+        return new Response(JSON.stringify({
+          error: "Translation failed",
+          details: String(err),
+          translated: totalTranslated,
+          hasMore: true,
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
 

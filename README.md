@@ -48,6 +48,7 @@ Supabase Edge Functions also need server-side secrets set in the Supabase projec
 ```env
 OPENAI_API_KEY=
 GOOGLE_TTS_API_KEY=
+OPENAI_TRANSLATION_MODEL=gpt-4o-mini
 ```
 
 Optional model overrides:

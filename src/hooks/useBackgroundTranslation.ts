@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 /**
  * Hook that runs background translation for the entire book.
@@ -40,7 +41,15 @@ export function useBackgroundTranslation(bookId: string | undefined, bookReady: 
           clearTimeout(timeoutId);
 
           if (!response.ok) {
-            console.error('Background translation error:', response.status);
+            let message = `Background translation error: ${response.status}`;
+            try {
+              const result = await response.json();
+              message = result.details || result.error || message;
+            } catch {
+              // Keep the status-only message if the function returned non-JSON.
+            }
+            console.error('Background translation error:', response.status, message);
+            toast.error('Translation failed. Check OpenAI billing/model access or Supabase function logs.');
             break;
           }
 

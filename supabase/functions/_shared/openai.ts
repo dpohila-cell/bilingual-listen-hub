@@ -30,11 +30,11 @@ export function getOpenAIApiKey(): string {
 }
 
 export function getOpenAITextModel(): string {
-  return Deno.env.get("OPENAI_TRANSLATION_MODEL") || Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini";
+  return Deno.env.get("OPENAI_TRANSLATION_MODEL") || Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 }
 
 export function getOpenAIDocumentModel(): string {
-  return Deno.env.get("OPENAI_DOCUMENT_MODEL") || Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini";
+  return Deno.env.get("OPENAI_DOCUMENT_MODEL") || Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
