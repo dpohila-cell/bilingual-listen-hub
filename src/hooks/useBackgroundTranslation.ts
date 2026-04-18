@@ -1,6 +1,5 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
 
 /**
  * Hook that starts server-side background translation for the entire book.
@@ -40,11 +39,6 @@ export function useBackgroundTranslation(bookId: string | undefined, bookReady: 
           // Keep the status-only message if the function returned non-JSON.
         }
         console.error('Background translation error:', response.status, message);
-        if (response.status === 402) {
-          toast.error('OpenAI quota exhausted. Check API billing, credits, and project limits.');
-        } else {
-          toast.error('Translation failed. Check OpenAI billing/model access or Supabase function logs.');
-        }
         return;
       }
 

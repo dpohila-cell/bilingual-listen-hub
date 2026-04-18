@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, Navigate, useSearchParams } from 'react-router-dom';
 import { SentenceDisplay } from '@/components/SentenceDisplay';
 import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
@@ -46,6 +46,7 @@ async function fetchAllSentences(bookId: string) {
 
 export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showSettings, setShowSettings] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const { user } = useAuth();
@@ -56,6 +57,7 @@ export default function Player() {
   const audioTriggeredRef = useRef<string | null>(null);
   const lastPrefetchTriggerRef = useRef<number>(-1);
   const translateAndRefetchRef = useRef<number>(0);
+  const autoplayStartedRef = useRef(false);
 
 
   const { data: book, isLoading: bookLoading } = useQuery({
@@ -172,6 +174,23 @@ export default function Player() {
     const clamped = Math.max(0, Math.min(index, sentences.length - 1));
     return sentences[clamped].sentenceOrder;
   };
+
+  useEffect(() => {
+    if (searchParams.get('autoplay') !== '1') return;
+    if (autoplayStartedRef.current) return;
+    if (!bookId || book?.status !== 'ready' || sentences.length === 0 || isGenerating) return;
+
+    autoplayStartedRef.current = true;
+    void (async () => {
+      const order = getSentenceOrder(0);
+      await ensureTranslated(order);
+      const v1 = getVoice(settings.language1);
+      const v2 = getVoice(settings.language2);
+      await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
+      play();
+      setSearchParams({}, { replace: true });
+    })();
+  }, [searchParams, bookId, book?.status, sentences.length, isGenerating, ensureTranslated, getVoice, generateBothBatch, settings.language1, settings.language2, play, setSearchParams]);
 
   // Auto-generate audio when player opens or voice/language changes
   useEffect(() => {

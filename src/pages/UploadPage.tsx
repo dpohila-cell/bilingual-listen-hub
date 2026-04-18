@@ -145,7 +145,7 @@ export default function UploadPage() {
           }
         }
         setCurrentProcess(4);
-        setTimeout(() => setStep('done'), 600);
+        navigate(`/player/${book.id}?autoplay=1`, { replace: true });
       } else {
         toast.error('Failed to process book. Please try again.');
         setStep('select');

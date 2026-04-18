@@ -12,6 +12,38 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const FIRST_PLAYABLE_BATCH_SIZE = 10;
+
+function waitUntil(promise: Promise<unknown>) {
+  const runtime = (globalThis as typeof globalThis & {
+    EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void };
+  }).EdgeRuntime;
+
+  if (runtime?.waitUntil) {
+    runtime.waitUntil(promise);
+  } else {
+    promise.catch((err) => console.error("Background task failed:", err));
+  }
+}
+
+async function triggerBackgroundTranslation(
+  supabaseUrl: string,
+  authHeader: string,
+  anonKey: string,
+  bookId: string,
+) {
+  const bgResponse = await fetch(`${supabaseUrl}/functions/v1/translate-all`, {
+    method: "POST",
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+      "apikey": anonKey,
+    },
+    body: JSON.stringify({ bookId, chain: true }),
+  });
+  console.log(`translate-all scheduled, status: ${bgResponse.status}`);
+}
+
 // ── Text utilities ──────────────────────────────────────────────
 
 function stripNullBytes(text: string): string {
@@ -726,10 +758,10 @@ Deno.serve(async (req) => {
       if (insertError) console.error(`Insert error at ${i}:`, insertError);
     }
 
-    console.log(`All ${sentences.length} originals saved. Translating first 25...`);
+    console.log(`All ${sentences.length} originals saved. Translating first ${FIRST_PLAYABLE_BATCH_SIZE}...`);
 
-    // Step 2: Translate only the first 25 sentences
-    const firstBatch = sentences.slice(0, 25);
+    // Step 2: Translate only the first playable batch
+    const firstBatch = sentences.slice(0, FIRST_PLAYABLE_BATCH_SIZE);
     const translations = await translateBatch(firstBatch, openAIApiKey, detectedLanguage);
 
     for (let j = 0; j < firstBatch.length; j++) {
@@ -752,25 +784,14 @@ Deno.serve(async (req) => {
       .eq("id", bookId);
 
     // Fire-and-forget: translate remaining sentences in the background
-    if (sentences.length > 25) {
-      console.log(`Triggering background translation for remaining ${sentences.length - 25} sentences`);
-      try {
-        const bgResponse = await fetch(
-          `${supabaseUrl}/functions/v1/translate-all`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: authHeader,
-              "Content-Type": "application/json",
-              "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
-            },
-            body: JSON.stringify({ bookId, chain: true }),
-          }
-        );
-        console.log(`translate-all triggered, status: ${bgResponse.status}`);
-      } catch (bgErr) {
-        console.error("Failed to trigger background translation:", bgErr);
-      }
+    if (sentences.length > FIRST_PLAYABLE_BATCH_SIZE) {
+      console.log(`Scheduling background translation for remaining ${sentences.length - FIRST_PLAYABLE_BATCH_SIZE} sentences`);
+      waitUntil(triggerBackgroundTranslation(
+        supabaseUrl,
+        authHeader,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        bookId,
+      ));
     }
 
     return new Response(
