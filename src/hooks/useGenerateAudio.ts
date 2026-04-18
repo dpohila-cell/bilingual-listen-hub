@@ -62,11 +62,9 @@ export function useGenerateAudio(bookId: string | undefined) {
 
     // Check if this range was already generated (unless forcing)
     const langKey = `${language}-${voice || 'default'}`;
+    const ranges = generatedRangesRef.current[langKey] || new Set<number>();
     if (!forceRegenerate) {
-      const ranges = generatedRangesRef.current[langKey] || new Set<number>();
       if (ranges.has(startOrder)) return;
-      ranges.add(startOrder);
-      generatedRangesRef.current[langKey] = ranges;
     }
 
     if (!silent) {
@@ -99,6 +97,11 @@ export function useGenerateAudio(bookId: string | undefined) {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed');
+
+      if (!forceRegenerate && !result.skippedMissingTranslation) {
+        ranges.add(startOrder);
+        generatedRangesRef.current[langKey] = ranges;
+      }
 
       if (voice) setVoiceCacheEntry(bookId, language, voice);
       if (forceRegenerate) clearAudioCache();

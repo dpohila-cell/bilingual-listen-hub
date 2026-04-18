@@ -138,19 +138,35 @@ serve(async (req) => {
     const { data: existingFiles } = await adminClient.storage.from("audio").list(storagePath);
     const existingSet = new Set((existingFiles || []).map((f: { name: string }) => f.name));
 
+    let skippedExisting = 0;
+    let skippedMissingTranslation = 0;
+
     const toGenerate = sentences.filter((s) => {
       const fileName = `${String(s.sentence_order).padStart(5, "0")}.mp3`;
-      if (existingSet.has(fileName)) return false;
+      if (existingSet.has(fileName)) {
+        skippedExisting++;
+        return false;
+      }
       // If generating audio for the book's original language, original_text is fine
       if (language === bookOriginalLang) return true;
       // For other languages, skip if translation is not yet available
       const translationField = language === "en" ? s.en_translation : language === "sv" ? s.sv_translation : language === "ru" ? s.ru_translation : null;
-      return translationField != null && translationField.trim().length > 0;
+      const hasTranslation = translationField != null && translationField.trim().length > 0;
+      if (!hasTranslation) skippedMissingTranslation++;
+      return hasTranslation;
     });
 
     if (toGenerate.length === 0) {
       return new Response(
-        JSON.stringify({ message: "All audio already generated", total: sentences.length, generated: 0 }),
+        JSON.stringify({
+          message: skippedMissingTranslation > 0
+            ? "Translations not ready for audio generation"
+            : "All audio already generated",
+          total: sentences.length,
+          generated: 0,
+          skippedExisting,
+          skippedMissingTranslation,
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -200,6 +216,8 @@ serve(async (req) => {
         total: sentences.length,
         generated,
         skipped: sentences.length - toGenerate.length,
+        skippedExisting,
+        skippedMissingTranslation,
         errors: errors.length > 0 ? errors : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

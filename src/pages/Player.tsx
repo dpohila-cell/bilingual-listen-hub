@@ -171,12 +171,12 @@ export default function Player() {
     const v1 = getVoice(lang1);
     const v2 = getVoice(lang2);
     const voiceKey = `${bookId}-${lang1}-${lang2}-${v1}-${v2}`;
-    if (audioTriggeredRef.current === voiceKey) return;
-
     const isVoiceChange = audioTriggeredRef.current !== null;
-    audioTriggeredRef.current = voiceKey;
-    lastPrefetchTriggerRef.current = -1;
-    resetRanges();
+    if (audioTriggeredRef.current !== voiceKey) {
+      audioTriggeredRef.current = voiceKey;
+      lastPrefetchTriggerRef.current = -1;
+      resetRanges();
+    }
 
     const order = getSentenceOrder(currentIndex);
     generateBothBatch(lang1, lang2, order, v1, v2, isVoiceChange, false);
