@@ -8,6 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { useVoiceSettings } from '@/hooks/useVoiceSettings';
+import type { Language } from '@/types';
 
 type UploadStep = 'select' | 'details' | 'processing' | 'done';
 
@@ -16,6 +18,7 @@ const PROCESSING_STEPS = [
   'Extracting text & detecting language…',
   'Generating translations…',
   'Saving sentences…',
+  'Preparing first audio batch...',
 ];
 
 export default function UploadPage() {
@@ -27,6 +30,35 @@ export default function UploadPage() {
   const [newBookId, setNewBookId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { getVoice } = useVoiceSettings();
+
+  const generateInitialAudio = async (targetBookId: string, originalLanguage: Language, accessToken: string) => {
+    const language1 = originalLanguage;
+    const language2: Language = originalLanguage === 'en' ? 'ru' : 'en';
+
+    await Promise.all([language1, language2].map((language) =>
+      fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-audio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({
+          bookId: targetBookId,
+          language,
+          voice: getVoice(language),
+          startOrder: 1,
+          count: 10,
+        }),
+      }).then(async (response) => {
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.error || `Audio generation failed for ${language}`);
+        }
+      })
+    ));
+  };
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -91,7 +123,7 @@ export default function UploadPage() {
       // Check if book was processed (fully or partially)
       const { data: updatedBook } = await supabase
         .from('books')
-        .select('status, sentence_count')
+        .select('status, sentence_count, original_language')
         .eq('id', book.id)
         .maybeSingle();
 
@@ -101,6 +133,18 @@ export default function UploadPage() {
           await supabase.from('books').update({ status: 'ready' }).eq('id', book.id);
         }
         setCurrentProcess(3);
+        const originalLanguage = ['en', 'ru', 'sv'].includes(updatedBook.original_language)
+          ? updatedBook.original_language as Language
+          : 'en';
+        if (session?.access_token) {
+          try {
+            await generateInitialAudio(book.id, originalLanguage, session.access_token);
+          } catch (audioErr) {
+            console.error('Initial audio generation failed:', audioErr);
+            toast.error('Book processed, but initial audio generation failed. Audio will be retried in the player.');
+          }
+        }
+        setCurrentProcess(4);
         setTimeout(() => setStep('done'), 600);
       } else {
         toast.error('Failed to process book. Please try again.');

@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Language } from '@/types';
-import { VOICE_OPTIONS } from '@/types';
 import { clearAudioCache } from './usePlayer';
 
 interface GenerateAudioState {
@@ -26,15 +25,7 @@ function setVoiceCacheEntry(bookId: string, lang: string, voiceId: string) {
 }
 
 function shouldForceRegenerate(bookId: string, lang: string, voice: string | undefined): boolean {
-  if (!voice) return false;
-  const cache = getVoiceCache();
-  const cacheKey = `${bookId}/${lang}`;
-  const cachedVoice = cache[cacheKey];
-  if (!cachedVoice) {
-    const defaultVoice = VOICE_OPTIONS[lang as Language]?.[0]?.id;
-    return voice !== defaultVoice;
-  }
-  return cachedVoice !== voice;
+  return false;
 }
 
 export function useGenerateAudio(bookId: string | undefined) {

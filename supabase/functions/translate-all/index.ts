@@ -15,6 +15,44 @@ const corsHeaders = {
 const AI_BATCH_SIZE = 25;
 const MAX_PER_CALL = 25; // 1 AI call per function invocation to avoid timeout
 
+function waitUntil(promise: Promise<unknown>) {
+  const runtime = (globalThis as typeof globalThis & {
+    EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void };
+  }).EdgeRuntime;
+
+  if (runtime?.waitUntil) {
+    runtime.waitUntil(promise);
+  } else {
+    promise.catch((err) => console.error("Background task failed:", err));
+  }
+}
+
+async function scheduleNextTranslation(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  authHeader: string,
+  bookId: string,
+) {
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  const response = await fetch(`${supabaseUrl}/functions/v1/translate-all`, {
+    method: "POST",
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+      "apikey": supabaseAnonKey,
+    },
+    body: JSON.stringify({ bookId, chain: true }),
+  });
+
+  if (!response.ok) {
+    await logFunctionEvent(supabase, "error", "failed to schedule next translation batch", {
+      bookId,
+      details: { status: response.status, body: await response.text() },
+    });
+  }
+}
+
 async function logFunctionEvent(
   supabase: ReturnType<typeof createClient>,
   level: "info" | "error",
@@ -107,9 +145,10 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const openAIApiKey = getOpenAIApiKey();
 
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authError } = await userClient.auth.getUser();
@@ -120,7 +159,7 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { bookId } = await req.json();
+    const { bookId, chain = false } = await req.json();
 
     if (!bookId) {
       return new Response(JSON.stringify({ error: "Missing bookId" }), {
@@ -128,7 +167,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    await logFunctionEvent(supabase, "info", "translate-all invoked", { bookId });
+    await logFunctionEvent(supabase, "info", "translate-all invoked", {
+      bookId,
+      details: { chain },
+    });
 
     const { data: book } = await supabase
       .from("books").select("id, user_id, original_language").eq("id", bookId).single();
@@ -251,6 +293,11 @@ Deno.serve(async (req) => {
       bookId,
       details: { totalTranslated, hasMore },
     });
+
+    if (chain && hasMore) {
+      waitUntil(scheduleNextTranslation(supabase, supabaseUrl, supabaseAnonKey, authHeader, bookId));
+      await logFunctionEvent(supabase, "info", "scheduled next translation batch", { bookId });
+    }
 
     return new Response(
       JSON.stringify({ success: true, translated: totalTranslated, hasMore }),

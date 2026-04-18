@@ -111,6 +111,16 @@ export default function Player() {
       })),
     [dbSentences]
   );
+  const originalLanguage = (book?.original_language || 'en') as Language;
+
+  const hasTextForLanguage = useCallback((sentence: Sentence, language: Language) => {
+    const translationMap: Record<Language, string> = {
+      en: sentence.enTranslation,
+      ru: sentence.ruTranslation,
+      sv: sentence.svTranslation,
+    };
+    return Boolean(translationMap[language] || (language === originalLanguage && sentence.originalText));
+  }, [originalLanguage]);
 
   // On-demand translation: when seeking to untranslated area, translate and refetch
   const ensureTranslated = useCallback(async (sentenceOrder: number) => {
@@ -120,13 +130,13 @@ export default function Player() {
     if (idx === -1) return;
     const s = sentences[idx];
     // Check if translation is missing
-    if (s.enTranslation && s.ruTranslation) return;
+    if (s.enTranslation && s.ruTranslation && s.svTranslation) return;
     
     setIsTranslating(true);
     const gen = ++translateAndRefetchRef.current;
     try {
       // Translate the batch starting at this order
-      const batchStart = Math.max(1, sentenceOrder - (sentenceOrder % TRANSLATE_BATCH_SIZE));
+      const batchStart = Math.floor((sentenceOrder - 1) / TRANSLATE_BATCH_SIZE) * TRANSLATE_BATCH_SIZE + 1;
       await translateRange(batchStart);
       // Force refetch and wait for it to complete so UI updates immediately
       if (translateAndRefetchRef.current === gen) {
@@ -146,6 +156,8 @@ export default function Player() {
     activeLang,
     settings,
     setSettings,
+    play,
+    pause,
     togglePlay,
     goToNext,
     goToPrev,
@@ -153,7 +165,7 @@ export default function Player() {
     text1,
     text2,
     totalSentences,
-  } = usePlayer(sentences, savedProgress, bookId, (book?.original_language || 'en') as Language);
+  } = usePlayer(sentences, savedProgress, bookId, originalLanguage, getVoice);
 
   const getSentenceOrder = (index: number) => {
     if (sentences.length === 0) return 1;
@@ -171,7 +183,6 @@ export default function Player() {
     const v1 = getVoice(lang1);
     const v2 = getVoice(lang2);
     const voiceKey = `${bookId}-${lang1}-${lang2}-${v1}-${v2}`;
-    const isVoiceChange = audioTriggeredRef.current !== null;
     if (audioTriggeredRef.current !== voiceKey) {
       audioTriggeredRef.current = voiceKey;
       lastPrefetchTriggerRef.current = -1;
@@ -179,7 +190,7 @@ export default function Player() {
     }
 
     const order = getSentenceOrder(currentIndex);
-    generateBothBatch(lang1, lang2, order, v1, v2, isVoiceChange, false);
+    generateBothBatch(lang1, lang2, order, v1, v2, false, false);
   }, [bookId, book?.status, settings.language1, settings.language2, voiceSettings.version, generateBothBatch, getVoice, resetRanges, sentences]);
 
   // Prefetch audio every 5 sentences (also ensure translations exist ahead)
@@ -236,15 +247,31 @@ export default function Player() {
   // Check if current sentence has actual translation for language2
   const currentSentenceMissingTranslation = (() => {
     if (!sentences[currentIndex]) return false;
-    const s = sentences[currentIndex];
-    const lang2 = settings.language2;
-    const translationMap: Record<Language, string> = {
-      en: s.enTranslation,
-      ru: s.ruTranslation,
-      sv: s.svTranslation,
-    };
-    return !translationMap[lang2];
+    const sentence = sentences[currentIndex];
+    return !hasTextForLanguage(sentence, settings.language1) || !hasTextForLanguage(sentence, settings.language2);
   })();
+
+  const handleSeek = (newIndex: number) => {
+    const targetSentence = sentences[newIndex];
+    const needsTranslation = targetSentence
+      ? !hasTextForLanguage(targetSentence, settings.language1) || !hasTextForLanguage(targetSentence, settings.language2)
+      : false;
+    const shouldResume = isPlaying || needsTranslation;
+
+    if (isPlaying) pause();
+    goTo(newIndex);
+
+    if (bookId && book?.status === 'ready') {
+      const order = getSentenceOrder(newIndex);
+      void (async () => {
+        await ensureTranslated(order);
+        const v1 = getVoice(settings.language1);
+        const v2 = getVoice(settings.language2);
+        await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
+        if (shouldResume) play();
+      })();
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4 p-5 pt-10 pb-28">
@@ -275,18 +302,7 @@ export default function Player() {
             value={currentIndex}
             onChange={(e) => {
               const newIndex = Number(e.target.value);
-              // Pause playback on seek to prevent text/audio mismatch
-              if (isPlaying) togglePlay();
-              goTo(newIndex);
-              if (bookId && book?.status === 'ready') {
-                const order = getSentenceOrder(newIndex);
-                (async () => {
-                  await ensureTranslated(order);
-                  const v1 = getVoice(settings.language1);
-                  const v2 = getVoice(settings.language2);
-                  await generateBothBatch(settings.language1, settings.language2, order, v1, v2, false, false);
-                })();
-              }
+              handleSeek(newIndex);
             }}
             className="w-full h-2 rounded-full appearance-none cursor-pointer
               [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-10

@@ -89,7 +89,7 @@ serve(async (req) => {
       });
     }
 
-    const batchStart = startOrder ?? 0;
+    const batchStart = startOrder ?? 1;
     const batchCount = count ?? 10;
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
@@ -124,7 +124,8 @@ serve(async (req) => {
     const voiceName = voice || defaultVoice.name;
     const languageCode = LANG_CODE_MAP[language] || defaultVoice.languageCode;
 
-    const storagePath = `${bookId}/${language}`;
+    const safeVoiceName = voiceName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `${bookId}/${language}/${safeVoiceName}`;
 
     // If forceRegenerate, delete only the files in this batch range
     if (forceRegenerate && sentences.length > 0) {

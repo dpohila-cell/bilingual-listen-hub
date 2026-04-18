@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-const TRANSLATE_BATCH_SIZE = 25;
+const TRANSLATE_BATCH_SIZE = 10;
 
 export function useTranslateBatch(bookId: string | undefined) {
   // Track which ranges have been requested to avoid duplicate calls

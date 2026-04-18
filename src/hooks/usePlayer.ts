@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { PlaybackSettings, Language, Sentence } from '@/types';
+import { PlaybackSettings, Language, Sentence, VOICE_OPTIONS } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 
 function getSentenceText(sentence: Sentence, lang: Language, originalLanguage?: Language): string {
@@ -46,10 +46,18 @@ function saveBookSettings(bookId: string, settings: PlaybackSettings) {
   } catch {}
 }
 
-function getAudioUrl(bookId: string, language: Language, sentenceOrder: number): string {
+function getDefaultVoice(language: Language): string {
+  return VOICE_OPTIONS[language]?.[0]?.id || VOICE_OPTIONS.en[0].id;
+}
+
+function sanitizeStorageSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function getAudioUrl(bookId: string, language: Language, voice: string, sentenceOrder: number): string {
   const { data } = supabase.storage
     .from('audio')
-    .getPublicUrl(`${bookId}/${language}/${String(sentenceOrder).padStart(5, '0')}.mp3`);
+    .getPublicUrl(`${bookId}/${language}/${sanitizeStorageSegment(voice)}/${String(sentenceOrder).padStart(5, '0')}.mp3`);
   return data.publicUrl;
 }
 
@@ -58,8 +66,8 @@ export function clearAudioCache() {
   // no-op now; URLs are always generated fresh
 }
 
-function buildAudioUrl(bookId: string, language: Language, sentenceOrder: number): string {
-  const url = getAudioUrl(bookId, language, sentenceOrder);
+function buildAudioUrl(bookId: string, language: Language, voice: string, sentenceOrder: number): string {
+  const url = getAudioUrl(bookId, language, voice, sentenceOrder);
   return `${url}?t=${Date.now()}`;
 }
 
@@ -94,12 +102,12 @@ function getUnlockedAudio(slot: 'A' | 'B'): HTMLAudioElement {
 }
 
 /** Check if the audio file actually exists before attempting playback */
-async function waitForAudioFile(bookId: string, language: Language, sentenceOrder: number, maxWaitMs = 20000): Promise<string | null> {
+async function waitForAudioFile(bookId: string, language: Language, voice: string, sentenceOrder: number, maxWaitMs = 20000): Promise<string | null> {
   const startTime = Date.now();
   const pollInterval = 1500;
 
   while (Date.now() - startTime < maxWaitMs) {
-    const url = buildAudioUrl(bookId, language, sentenceOrder);
+    const url = buildAudioUrl(bookId, language, voice, sentenceOrder);
     try {
       const resp = await fetch(url, { method: 'HEAD' });
       if (resp.ok) {
@@ -110,7 +118,7 @@ async function waitForAudioFile(bookId: string, language: Language, sentenceOrde
     }
     await new Promise(r => setTimeout(r, pollInterval));
   }
-  console.warn(`Audio file not ready after ${maxWaitMs / 1000}s: ${language} sentence ${sentenceOrder}`);
+  console.warn(`Audio file not ready after ${maxWaitMs / 1000}s: ${language}/${voice} sentence ${sentenceOrder}`);
   return null;
 }
 
@@ -159,11 +167,19 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
   });
 }
 
-export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?: string, originalLanguage?: Language) {
+export function usePlayer(
+  sentences: Sentence[],
+  initialIndex?: number,
+  bookId?: string,
+  originalLanguage?: Language,
+  getVoice?: (language: Language) => string,
+) {
   const [currentIndex, _setCurrentIndex] = useState(initialIndex || 0);
   const currentIndexRef = useRef(currentIndex);
   const sentencesRef = useRef(sentences);
+  const getVoiceRef = useRef(getVoice);
   sentencesRef.current = sentences;
+  getVoiceRef.current = getVoice;
   const setCurrentIndex = useCallback((idx: number) => {
     currentIndexRef.current = idx;
     _setCurrentIndex(idx);
@@ -256,7 +272,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         // Wait for first audio file to be ready
         setActiveLang(activeLang1);
         setIsLoading(true);
-        const url1 = await waitForAudioFile(bookId, lang1, sentence.sentenceOrder);
+        const voice1 = getVoiceRef.current?.(lang1) || getDefaultVoice(lang1);
+        const url1 = await waitForAudioFile(bookId, lang1, voice1, sentence.sentenceOrder);
         if (playGenRef.current !== gen) return;
         if (!url1) {
           // File never became available — skip this sentence entirely
@@ -278,7 +295,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
         // Wait for second audio file to be ready
         setActiveLang(activeLang2);
         setIsLoading(true);
-        const url2 = await waitForAudioFile(bookId, lang2, sentence.sentenceOrder);
+        const voice2 = getVoiceRef.current?.(lang2) || getDefaultVoice(lang2);
+        const url2 = await waitForAudioFile(bookId, lang2, voice2, sentence.sentenceOrder);
         if (playGenRef.current !== gen) return;
         if (!url2) {
           console.warn(`Skipping sentence ${sentence.sentenceOrder}: lang2 audio not ready`);
@@ -353,11 +371,7 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     stopCurrent();
     setActiveLang(null);
     setCurrentIndex(clamped);
-    if (isPlaying) {
-      const gen = playGenRef.current;
-      playSentence(clamped, gen);
-    }
-  }, [stopCurrent, isPlaying, playSentence]);
+  }, [stopCurrent]);
 
   useEffect(() => {
     return () => {
@@ -379,6 +393,8 @@ export function usePlayer(sentences: Sentence[], initialIndex?: number, bookId?:
     activeLang,
     settings,
     setSettings,
+    play,
+    pause,
     togglePlay,
     goToNext,
     goToPrev,
