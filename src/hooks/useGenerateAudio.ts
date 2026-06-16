@@ -141,7 +141,8 @@ export function useGenerateAudio(bookId: string | undefined) {
     ]);
 
     if (!silent) {
-      setState({ isGenerating: false, progress: '', error: null });
+      // Preserve any error set by generateBatch — do not clear it here.
+      setState(s => ({ ...s, isGenerating: false, progress: '' }));
     }
 
     return results.every(Boolean);

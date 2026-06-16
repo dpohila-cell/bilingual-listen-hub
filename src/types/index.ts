@@ -19,22 +19,25 @@ export interface VoiceOption {
   gender: 'Male' | 'Female';
 }
 
+// Google Chirp3-HD voices — newest, most natural generation (replaces legacy WaveNet).
 export const VOICE_OPTIONS: Record<Language, VoiceOption[]> = {
   en: [
-    { id: 'en-US-Wavenet-D', name: 'James', gender: 'Male' },
-    { id: 'en-US-Wavenet-C', name: 'Sarah', gender: 'Female' },
-    { id: 'en-US-Wavenet-B', name: 'Michael', gender: 'Male' },
-    { id: 'en-US-Wavenet-F', name: 'Emily', gender: 'Female' },
+    { id: 'en-US-Chirp3-HD-Charon', name: 'James', gender: 'Male' },
+    { id: 'en-US-Chirp3-HD-Aoede', name: 'Sarah', gender: 'Female' },
+    { id: 'en-US-Chirp3-HD-Fenrir', name: 'Michael', gender: 'Male' },
+    { id: 'en-US-Chirp3-HD-Kore', name: 'Emily', gender: 'Female' },
   ],
   ru: [
-    { id: 'ru-RU-Wavenet-B', name: 'Dmitry', gender: 'Male' },
-    { id: 'ru-RU-Wavenet-A', name: 'Anna', gender: 'Female' },
-    { id: 'ru-RU-Wavenet-D', name: 'Alexei', gender: 'Male' },
-    { id: 'ru-RU-Wavenet-C', name: 'Elena', gender: 'Female' },
+    { id: 'ru-RU-Chirp3-HD-Charon', name: 'Dmitry', gender: 'Male' },
+    { id: 'ru-RU-Chirp3-HD-Aoede', name: 'Anna', gender: 'Female' },
+    { id: 'ru-RU-Chirp3-HD-Fenrir', name: 'Alexei', gender: 'Male' },
+    { id: 'ru-RU-Chirp3-HD-Kore', name: 'Elena', gender: 'Female' },
   ],
   sv: [
-    { id: 'sv-SE-Wavenet-A', name: 'Astrid', gender: 'Female' },
-    { id: 'sv-SE-Wavenet-B', name: 'Erik', gender: 'Male' },
+    { id: 'sv-SE-Chirp3-HD-Aoede', name: 'Astrid', gender: 'Female' },
+    { id: 'sv-SE-Chirp3-HD-Charon', name: 'Erik', gender: 'Male' },
+    { id: 'sv-SE-Chirp3-HD-Kore', name: 'Linnea', gender: 'Female' },
+    { id: 'sv-SE-Chirp3-HD-Fenrir', name: 'Lars', gender: 'Male' },
   ],
 };
 

@@ -8,9 +8,9 @@ const corsHeaders = {
 };
 
 const DEFAULT_VOICES: Record<string, { languageCode: string; name: string }> = {
-  en: { languageCode: "en-US", name: "en-US-Wavenet-D" },
-  ru: { languageCode: "ru-RU", name: "ru-RU-Wavenet-B" },
-  sv: { languageCode: "sv-SE", name: "sv-SE-Wavenet-A" },
+  en: { languageCode: "en-US", name: "en-US-Chirp3-HD-Charon" },
+  ru: { languageCode: "ru-RU", name: "ru-RU-Chirp3-HD-Charon" },
+  sv: { languageCode: "sv-SE", name: "sv-SE-Chirp3-HD-Aoede" },
 };
 
 const LANG_CODE_MAP: Record<string, string> = {
@@ -209,6 +209,16 @@ serve(async (req) => {
           errors.push(String(r.reason));
         }
       }
+    }
+
+    // Hard failure: we tried to generate but produced nothing and hit errors
+    // (e.g. Google billing disabled, invalid voice). Surface it loudly instead
+    // of returning 200, so the client shows a real error rather than silence.
+    if (generated === 0 && errors.length > 0) {
+      return new Response(
+        JSON.stringify({ error: `Audio generation failed: ${errors[0]}`, errors }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(
