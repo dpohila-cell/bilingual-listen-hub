@@ -2,7 +2,10 @@ import { Upload, FileText } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// Single source of truth for supported upload formats. Drives both the file
+// picker filter (`accept`) and the visible hint, so they never drift apart.
 const ACCEPTED_FORMATS = ['.epub', '.fb2', '.txt', '.doc', '.docx', '.pdf', '.mobi', '.azw', '.azw3'];
+const FORMAT_LABEL = ACCEPTED_FORMATS.map((f) => f.replace('.', '').toUpperCase()).join(', ');
 
 interface UploadZoneProps {
   onFileSelect: (file: File) => void;
@@ -86,7 +89,7 @@ export function UploadZone({ onFileSelect }: UploadZoneProps) {
               <div className="text-center">
                 <p className="text-sm font-medium">Drop your eBook here</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  EPUB, FB2, TXT, DOC, DOCX, PDF, MOBI, AZW
+                  {FORMAT_LABEL}
                 </p>
               </div>
             </motion.div>

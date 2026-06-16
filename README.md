@@ -10,8 +10,12 @@ Bilingual Listen Hub is a React and Supabase app for uploading ebooks, translati
 - Tailwind CSS
 - shadcn-ui
 - Supabase Auth, Database, Storage, and Edge Functions
-- OpenAI for translation, language detection, and PDF text extraction
+- OpenAI for translation, PDF text extraction, and language detection (script
+  heuristics first, OpenAI as fallback)
 - Google Cloud Text-to-Speech (Chirp3-HD voices) for generated audio
+
+Supported upload formats: EPUB, FB2, TXT, DOC, DOCX, PDF, MOBI, AZW, AZW3. PDF is
+extracted with OpenAI; the other formats use built-in parsers.
 
 ## Local Development
 
@@ -42,6 +46,10 @@ VITE_SUPABASE_PROJECT_ID=
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
+
+> `VITE_SUPABASE_PROJECT_ID` is kept for reference/tooling but is not read by the
+> app code — only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are used
+> (see `src/integrations/supabase/client.ts`).
 
 Supabase Edge Functions also need server-side secrets set in the Supabase project:
 
