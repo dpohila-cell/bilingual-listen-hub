@@ -1,0 +1,72 @@
+# Product Behavior
+
+The authoritative description of how Bilingual Listen Hub should behave. Read this before
+changing upload, translation, audio, or playback. Keep it consistent with any change.
+
+## Purpose
+
+Help a user upload an ebook, get it translated sentence by sentence, and listen to it
+bilingually (original language + one target language) with generated speech.
+
+## Languages and voices
+
+- Supported languages: English (`en`), Russian (`ru`), Swedish (`sv`).
+- A book has one `original_language`; the second playback language is the user's choice
+  (default: the original's counterpart — `en` ↔ `ru`).
+- Voices: Google Chirp3-HD family, the single source of truth is `VOICE_OPTIONS` in
+  `src/types/index.ts` (currently Charon/Fenrir male, Aoede/Kore female per language).
+  The user picks and previews a voice per language in Settings.
+
+## Upload
+
+- Accepted formats (single source of truth = `ACCEPTED_FORMATS` in `UploadZone.tsx`):
+  EPUB, FB2, TXT, DOC, DOCX, PDF, MOBI, AZW, AZW3. PDF is extracted with OpenAI; the rest
+  with built-in parsers.
+- A book becomes `ready` only when it is genuinely processed. A book that is still
+  `processing` (or failed) must not be presented or opened as if ready.
+
+## Translation and audio — windowed model (LOCKED DECISION, 2026-06-18)
+
+Translation and audio are produced **only in a sliding window around the sentence being
+played**, never for the whole book up front. This trades a small wait when jumping into a
+new region for much lower cost (you only pay OpenAI/Google for what is actually listened
+to) and a simpler system.
+
+Agreed rules:
+
+1. **Jump = short wait.** Seeking to an unprepared position triggers the prepare pipeline
+   (translate → audio) for that window, with a visible "preparing…" indicator. This wait
+   is accepted by design; it must never look like a silent hang.
+2. **No whole-book translation.** The full background translation is removed entirely:
+   the `translate-all` edge function, the `useBackgroundTranslation` hook, and the 15s
+   `refetchInterval` that existed to surface its results. There is **no** "translate whole
+   book" button. The only translation path is the on-demand windowed one driven by the
+   player (`ensureTranslated` → `translate-batch`).
+3. **Look-ahead = one window.** The next window is prepared when 5 sentences remain in the
+   current one (`PREPARE_NEXT_WHEN_REMAINING = 5`). Window size is 10 sentences.
+4. **Order within a window:** translate first, then voice. Audio for the original language
+   needs no translation; audio for the second language is gated on its translation.
+5. **Audio is already windowed** — leave it as is; only the translation side changes.
+
+### Quality requirements that make the windowed model feel solid
+
+- A clear "preparing…" state on first play and after any jump (never a silent stall).
+- Robust retry with backoff inside window preparation, because Google Chirp3-HD can
+  rate-limit bursts that now happen at the moment of listening.
+- Translation must be reliable enough that audio gating works: translations attached to
+  the correct sentence (by id, not array position) and partial translations (e.g. English
+  filled but Russian/Swedish empty) re-attempted rather than treated as done.
+
+## Playback
+
+- Plays language 1, pauses (`pauseDuration`), plays language 2, pauses, advances.
+- Playback order, speed, and pause length are per-book settings.
+- Pausing or seeking immediately cancels in-flight playback.
+
+## Failure behavior
+
+- If audio cannot be generated (e.g. Google billing disabled, invalid voice),
+  `generate-audio` returns a real error (`502` with Google's message) and the player shows
+  it — it must not stop silently.
+- Deleting a book must remove its sentences, progress, the source file (`books.file_path`),
+  and all generated audio under `bookId/` — leaving no paid storage behind.

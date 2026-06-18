@@ -1,0 +1,27 @@
+# Changelog
+
+User-visible and project-visible changes, newest first.
+
+## 2026-06-18
+
+- **Process:** Adopted the two-agent Claude+Codex workflow (mirrored from the Rolewise
+  project). Added `CLAUDE.md`, `AGENTS.md`, `.PROMPTS.md`, and the `project-docs/` set
+  (`ARCHITECTURE.md`, `PRODUCT_BEHAVIOR.md`, `ROADMAP.md`, this file). Claude is the
+  auditor/planner/reviewer; Codex is the coder; neither approves its own work.
+- **Audio voices:** Switched text-to-speech from legacy Google WaveNet to Google
+  Chirp3-HD across English, Russian, and Swedish (more natural speech). Voice names and
+  genders in the UI are unchanged; only the underlying engine changed.
+- **Audio errors:** `generate-audio` now returns a real `502` with Google's message when
+  nothing could be generated (e.g. billing disabled), and the player shows the error
+  instead of stopping silently.
+- **Upload hint:** The supported-format list on the upload screen is now derived from a
+  single source of truth and includes the previously missing AZW3.
+- **Docs:** README aligned with the above (Chirp3-HD, Google billing note, GitHub Pages
+  deployment, supported formats, unused `VITE_SUPABASE_PROJECT_ID`).
+
+### Context discovered this session
+
+- Frontend is hosted on GitHub Pages from the committed `docs/` folder on `main`, custom
+  domain `bi-reader.lynxpilot.io` via `public/CNAME`.
+- Google Cloud billing on the TTS project had lapsed, which silently stopped audio
+  generation; re-enabling billing restored it.
