@@ -2,20 +2,7 @@ import { Upload, FileText } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-
-// Single source of truth for supported upload formats. Drives both the file
-// picker filter (`accept`) and the visible hint, so they never drift apart.
-const ACCEPTED_FORMATS = ['.epub', '.fb2', '.txt', '.doc', '.docx', '.pdf', '.mobi', '.azw', '.azw3'];
-const FORMAT_LABEL = ACCEPTED_FORMATS.map((f) => f.replace('.', '').toUpperCase()).join(', ');
-const MAX_FILE_SIZE_MB = 25;
-const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
-
-function validateFile(file: File): string | null {
-  const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
-  if (!ACCEPTED_FORMATS.includes(ext)) return `Unsupported file type. Allowed: ${FORMAT_LABEL}.`;
-  if (file.size > MAX_FILE_SIZE) return `File is too large (max ${MAX_FILE_SIZE_MB} MB).`;
-  return null;
-}
+import { ACCEPTED_FORMATS, FORMAT_LABEL, validateFile } from '@/lib/uploadValidation';
 
 interface UploadZoneProps {
   onFileSelect: (file: File) => void;

@@ -138,9 +138,11 @@ Consolidation is done: `translate-batch` and `process-book` now use the shared
 `supabase/functions/_shared/translation.ts` helper. Splitting oversized files is deferred
 to a later cleanup so this change stays focused on translation behavior.
 
-### P3.4 — Real tests · Planned
-The suite is one trivial `true===true` test. **Fix:** add real tests for the upload flow,
-deletion flow, translation retry/alignment, and player readiness.
+### P3.4 — Real tests · Done (2026-06-22)
+The suite was one trivial `true===true` test. **Fixed:** extracted pure translation
+JSON repair/alignment, sentence splitting, and upload validation helpers, then replaced
+the placeholder test with focused Vitest coverage for those behavior-neutral units.
+Broader upload/deletion/player integration tests remain future work.
 
 ### P3.5 — Enable strict TypeScript (deferred from P3.1) · Planned
 `strict`, `noImplicitAny`, and `strictNullChecks` are off. Turning them on will surface

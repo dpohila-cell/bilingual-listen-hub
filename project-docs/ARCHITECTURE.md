@@ -15,7 +15,7 @@ rules live in `PRODUCT_BEHAVIOR.md`.
 
 - `profiles` — one row per user, auto-created on signup.
 - `books` — `id`, `user_id`, `title`, `author`, `original_language`, `file_path`,
-  `status` (`processing` | `ready`), `sentence_count`.
+  `status` (`processing` | `ready` | `error`), `sentence_count`.
 - `sentences` — `book_id`, `sentence_order`, `original_text`, and `en_translation`,
   `ru_translation`, `sv_translation` (nullable until translated).
 - `user_progress` — last read position per (user, book).
@@ -55,8 +55,9 @@ All functions use `verify_jwt=false` at the platform and validate the user thems
 1. File uploaded to the `ebooks` bucket; a `books` row is created with `status=processing`.
 2. `process-book` extracts text, detects language, stores sentences, translates the first
    batch.
-3. The client checks `sentence_count`; if > 0 it sets `status=ready` and generates the
-   first audio batch, then opens the player.
+3. The client reads the book's stored `status` (set by `process-book`): `ready` → generate
+   the first audio batch and open the player; `error` → show a failure message; still
+   `processing` → send the user to the library where it shows a processing badge.
 
 ### Playback (`Player` + `usePlayer`)
 1. All sentences are fetched (paginated past the 1000-row limit) into memory.
@@ -72,12 +73,13 @@ All functions use `verify_jwt=false` at the platform and validate the user thems
   gating). Large; a split is on the roadmap.
 - `src/hooks/usePlayer.ts` — the audio playback engine (two reusable audio elements, iOS
   unlock, speed, pause handling).
-- `src/hooks/useGenerateAudio.ts`, `useTranslateBatch.ts`, `useBackgroundTranslation.ts` —
-  client calls into the edge functions.
+- `src/hooks/useGenerateAudio.ts`, `useTranslateBatch.ts` — client calls into the edge
+  functions (on-demand, windowed).
 - `src/hooks/useVoiceSettings.ts` + `src/types/index.ts` (`VOICE_OPTIONS`) — voice list
   (single source of truth) and per-language voice selection with preview.
-- `src/components/UploadZone.tsx` — drag/drop + file picker; `ACCEPTED_FORMATS` is the
-  single source of truth for supported formats.
+- `src/components/UploadZone.tsx` — drag/drop + file picker; upload format and size
+  validation come from `src/lib/uploadValidation.ts`, the single source of truth for
+  supported formats.
 
 ## Deploy
 

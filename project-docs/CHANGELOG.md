@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Real tests (P3.4):** Extracted pure translation JSON repair/alignment, sentence
+  splitting, and upload validation helpers, then replaced the placeholder test with
+  focused Vitest coverage for those units.
 - **Translation consolidation (P3.3):** Moved the shared translation prompt,
   JSON-repair parsing, numbered response validation, and result alignment into
   `supabase/functions/_shared/translation.ts`. `translate-batch` and `process-book` now
