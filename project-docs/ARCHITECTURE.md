@@ -39,14 +39,15 @@ RLS: users can only read/write their own books, their own books' sentences (via
   detects language (by script first, OpenAI fallback), splits into sentences, stores them,
   and translates the first batch.
 - `translate-batch` — translates one range of sentences on demand (used by the player).
-- `translate-all` — translates the whole book in chained background batches.
-  **Slated for removal** (see the windowed decision in `PRODUCT_BEHAVIOR.md`).
+  This is the only translation path; the whole-book `translate-all` background job was
+  removed (windowed model — see `PRODUCT_BEHAVIOR.md`). `process-book` still translates
+  the first batch inline at upload so the book is immediately playable.
 - `generate-audio` — synthesizes a batch of sentences for one language/voice via Google
   TTS and uploads MP3s. Returns `502` with Google's message if nothing could be generated.
 - `tts-preview` — synthesizes a short sample for voice preview.
 
-All functions use `verify_jwt=false` at the platform and (except `tts-preview` today)
-validate the user themselves via `auth.getUser()` before doing work.
+All functions use `verify_jwt=false` at the platform and validate the user themselves via
+`auth.getUser()` before doing work.
 
 ## Request flow
 

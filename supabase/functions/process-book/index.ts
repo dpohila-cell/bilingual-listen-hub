@@ -14,36 +14,6 @@ const corsHeaders = {
 
 const FIRST_PLAYABLE_BATCH_SIZE = 10;
 
-function waitUntil(promise: Promise<unknown>) {
-  const runtime = (globalThis as typeof globalThis & {
-    EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void };
-  }).EdgeRuntime;
-
-  if (runtime?.waitUntil) {
-    runtime.waitUntil(promise);
-  } else {
-    promise.catch((err) => console.error("Background task failed:", err));
-  }
-}
-
-async function triggerBackgroundTranslation(
-  supabaseUrl: string,
-  authHeader: string,
-  anonKey: string,
-  bookId: string,
-) {
-  const bgResponse = await fetch(`${supabaseUrl}/functions/v1/translate-all`, {
-    method: "POST",
-    headers: {
-      Authorization: authHeader,
-      "Content-Type": "application/json",
-      "apikey": anonKey,
-    },
-    body: JSON.stringify({ bookId, chain: true }),
-  });
-  console.log(`translate-all scheduled, status: ${bgResponse.status}`);
-}
-
 // ── Text utilities ──────────────────────────────────────────────
 
 function stripNullBytes(text: string): string {
@@ -805,17 +775,6 @@ Deno.serve(async (req) => {
       .from("books")
       .update({ status: "ready", sentence_count: sentences.length })
       .eq("id", bookId);
-
-    // Fire-and-forget: translate remaining sentences in the background
-    if (sentences.length > FIRST_PLAYABLE_BATCH_SIZE) {
-      console.log(`Scheduling background translation for remaining ${sentences.length - FIRST_PLAYABLE_BATCH_SIZE} sentences`);
-      waitUntil(triggerBackgroundTranslation(
-        supabaseUrl,
-        authHeader,
-        Deno.env.get("SUPABASE_ANON_KEY")!,
-        bookId,
-      ));
-    }
 
     return new Response(
       JSON.stringify({ success: true, sentenceCount: sentences.length, translated: firstBatch.length }),

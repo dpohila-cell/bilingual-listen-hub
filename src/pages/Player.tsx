@@ -5,7 +5,6 @@ import { PlayerControls } from '@/components/PlayerControls';
 import { PlaybackSettingsPanel } from '@/components/PlaybackSettings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useGenerateAudio } from '@/hooks/useGenerateAudio';
-import { useBackgroundTranslation } from '@/hooks/useBackgroundTranslation';
 import { useTranslateBatch } from '@/hooks/useTranslateBatch';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
@@ -149,16 +148,10 @@ export default function Player() {
     enabled: !!bookId,
   });
 
-  // Run background translation for the entire book
-  useBackgroundTranslation(bookId, book?.status === 'ready');
-
   const { data: dbSentences = [], isLoading: sentencesLoading } = useQuery({
     queryKey: ['sentences', bookId],
     queryFn: () => fetchAllSentences(bookId!),
     enabled: !!bookId && book?.status === 'ready',
-    // Refetch periodically to pick up background translations
-    refetchInterval: 15000,
-    refetchIntervalInBackground: false,
   });
 
   const { data: savedProgress, isFetched: progressFetched } = useQuery({

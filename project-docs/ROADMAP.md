@@ -36,11 +36,15 @@ is a manual check (needs a browser session). **Affected:** `src/pages/Library.ts
 
 ## P1 — Correctness
 
-### P1.1 — Windowed translate/audio (LOCKED) · Planned
-Remove the whole-book translation path and keep only the on-demand windowed one (see
-`PRODUCT_BEHAVIOR.md`). **Remove:** `translate-all` edge function, `useBackgroundTranslation`
-hook, the 15s `refetchInterval` in `Player.tsx`. Audio is already windowed — leave it.
-Removing `translate-all` also deletes one of the three duplicate translation copies.
+### P1.1 — Windowed translate/audio (LOCKED) · Done (2026-06-18)
+Removed the whole-book translation path; only the on-demand windowed one remains (see
+`PRODUCT_BEHAVIOR.md`). **Removed:** `translate-all` edge function source,
+`useBackgroundTranslation` hook, the 15s `refetchInterval` in `Player.tsx`, and the
+`triggerBackgroundTranslation` call in `process-book` (inline first-batch translation
+kept). `process-book` redeployed via the Supabase CLI. Audio was already windowed.
+**Manual cleanup left:** the deployed `translate-all` function is now orphaned (nothing
+calls it) — delete it in the Supabase dashboard when convenient (the harness blocks
+deleting a live function from here).
 
 ### P1.2 — Reliable translation · Planned
 Translation currently trusts the model to return exactly N items in array order and

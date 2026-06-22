@@ -7,6 +7,11 @@ User-visible and project-visible changes, newest first.
 - **Security (P0.1):** `tts-preview` now authenticates the real user (`auth.getUser()`)
   before calling Google. Previously any caller with the endpoint could spend Google TTS
   quota; a non-user token now returns `401`. Deployed as `tts-preview` v4.
+- **Translation/cost (P1.1):** Removed the whole-book background translation. The book is
+  now translated only in a window around what's being played (plus the first batch at
+  upload), so you only pay to translate what you actually listen to. Deleted the
+  `translate-all` function source, the `useBackgroundTranslation` hook, the player's 15s
+  poll, and the trigger in `process-book` (redeployed). No user-visible change to playback.
 - **Security / cost (P0.2):** Deleting a book now actually removes its source file and all
   its generated audio (previously both were left behind, costing storage). Tightened the
   `audio` storage policies so a user can no longer read/overwrite/delete other users'
