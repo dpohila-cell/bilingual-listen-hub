@@ -32,7 +32,7 @@ export default function Library() {
       const { data, error } = await supabase
         .from('books')
         .select('*')
-        .in('status', ['ready', 'processing'])
+        .in('status', ['ready', 'processing', 'error'])
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map((b): Book => ({
@@ -42,6 +42,7 @@ export default function Library() {
         originalLanguage: (b.original_language as Book['originalLanguage']) || 'en',
         fileFormat: 'txt',
         filePath: b.file_path,
+        status: b.status,
         chapterCount: 1,
         sentenceCount: b.sentence_count,
         createdAt: b.created_at,
@@ -62,10 +63,7 @@ export default function Library() {
     enabled: !!user,
   });
 
-  const readyBooks = books.filter((b) => {
-    // Also include books from query that have status ready
-    return true; // RLS ensures only user's books; filter by status in query if needed
-  });
+  const readyBooks = books.filter((b) => b.status === 'ready');
 
   const getProgress = (bookId: string): UserProgress | undefined => {
     const p = progress?.find((pr) => pr.book_id === bookId);
@@ -86,6 +84,17 @@ export default function Library() {
   const continueBook = lastRead ? readyBooks.find((b) => b.id === lastRead.book_id) : undefined;
 
   const deleteBookName = books.find((b) => b.id === deleteBookId)?.title || '';
+
+  const handleBookClick = (bookId: string) => {
+    const book = books.find((b) => b.id === bookId);
+    if (book?.status === 'ready') {
+      navigate(`/player/${bookId}`);
+    } else if (book?.status === 'processing') {
+      toast('Still processing…');
+    } else if (book?.status === 'error') {
+      toast('Processing failed — delete it and re-upload.');
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteBookId) return;
@@ -167,7 +176,7 @@ export default function Library() {
           <BookCard
             book={continueBook}
             progress={getProgress(continueBook.id)}
-            onClick={() => navigate(`/player/${continueBook.id}`)}
+            onClick={handleBookClick}
             onDelete={setDeleteBookId}
           />
         </section>
@@ -178,18 +187,18 @@ export default function Library() {
         <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           All Books
         </h2>
-        {readyBooks.length === 0 ? (
+        {books.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center">
             <p className="text-sm text-muted-foreground">No books yet. Upload your first eBook!</p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {readyBooks.map((book) => (
+            {books.map((book) => (
               <BookCard
                 key={book.id}
                 book={book}
                 progress={getProgress(book.id)}
-                onClick={() => navigate(`/player/${book.id}`)}
+                onClick={handleBookClick}
                 onDelete={setDeleteBookId}
               />
             ))}

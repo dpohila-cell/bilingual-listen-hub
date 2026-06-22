@@ -61,14 +61,18 @@ duplicates) instead of deduping a range forever. Deployed via CLI. Structured JS
 is deferred to P3.3 (consolidation). **Affected:** `supabase/functions/translate-batch/index.ts`,
 `src/hooks/useTranslateBatch.ts`.
 
-### P1.3 — Honest `ready` status · Planned
+### P1.3 — Honest `ready` status · Done (2026-06-22)
 The client sets `status=ready` whenever `sentence_count > 0`, even if `process-book`
 errored or timed out, so a partially processed book can open. And the library lists both
 `ready` and `processing` books with a no-op filter, so a `processing` book can be opened
 into an empty player.
-**Fix:** mark `ready` based on real completion; don't present/open `processing` books as
-ready. **Affects:** `src/pages/UploadPage.tsx`, `src/pages/Library.tsx`,
-`supabase/functions/process-book/index.ts`.
+**Fixed:** the upload page now trusts the stored book status after `process-book` returns:
+`ready` opens the player and generates the initial audio batch, `error` returns to upload,
+and still-`processing` books return to the library without forcing `ready`. The library
+now lists `ready`, `processing`, and `error` books, but only opens `ready` books; other
+states show clear status messages and remain deletable. **Affected:**
+`src/types/index.ts`, `src/pages/UploadPage.tsx`, `src/pages/Library.tsx`,
+`src/components/BookCard.tsx`.
 
 ### P1.4 — `process-book` atomicity · Planned
 On re-processing, old sentences are deleted then new ones inserted without a transaction;

@@ -1,6 +1,7 @@
 import { Book, LANGUAGE_LABELS, UserProgress } from '@/types';
 import { BookOpen, Headphones, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Badge } from '@/components/ui/badge';
 
 interface BookCardProps {
   book: Book;
@@ -20,6 +21,11 @@ export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
     ? Math.round((progress.completedSentences / progress.totalSentences) * 100)
     : 0;
   const colorClass = COVER_COLORS[parseInt(book.id) % COVER_COLORS.length];
+  const statusLabel = book.status === 'processing'
+    ? 'Processing…'
+    : book.status === 'error'
+      ? 'Failed'
+      : null;
 
   return (
     <motion.button
@@ -58,6 +64,11 @@ export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
       </div>
       <div className="flex flex-shrink-0 flex-col items-center gap-2">
         <Headphones className="h-4 w-4 text-muted-foreground" />
+        {statusLabel && (
+          <Badge variant={book.status === 'error' ? 'destructive' : 'secondary'}>
+            {statusLabel}
+          </Badge>
+        )}
         {onDelete && (
           <button
             onClick={(e) => {

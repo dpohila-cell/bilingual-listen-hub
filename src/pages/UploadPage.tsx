@@ -127,11 +127,7 @@ export default function UploadPage() {
         .eq('id', book.id)
         .maybeSingle();
 
-      if (updatedBook && updatedBook.sentence_count > 0) {
-        // If still processing but has sentences, mark as ready
-        if (updatedBook.status === 'processing') {
-          await supabase.from('books').update({ status: 'ready' }).eq('id', book.id);
-        }
+      if (updatedBook?.status === 'ready') {
         setCurrentProcess(3);
         const originalLanguage = ['en', 'ru', 'sv'].includes(updatedBook.original_language)
           ? updatedBook.original_language as Language
@@ -146,9 +142,12 @@ export default function UploadPage() {
         }
         setCurrentProcess(4);
         navigate(`/player/${book.id}?autoplay=1`, { replace: true });
-      } else {
+      } else if (updatedBook?.status === 'error') {
         toast.error('Failed to process book. Please try again.');
         setStep('select');
+      } else {
+        toast('Your book is still being processed. It will appear in your library when ready.');
+        navigate('/');
       }
     } catch (err: unknown) {
       console.error('Upload error:', err);

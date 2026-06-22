@@ -2,6 +2,14 @@
 
 User-visible and project-visible changes, newest first.
 
+## 2026-06-22
+
+- **Upload / library correctness (P1.3):** Upload no longer marks a book `ready` just
+  because some sentences exist. Ready books open normally and get the first audio batch;
+  still-processing books return to the library with a processing message; failed books
+  show as failed and can be deleted/re-uploaded. The library now displays ready,
+  processing, and failed books while only allowing ready books to open in the player.
+
 ## 2026-06-18
 
 - **Security (P0.1):** `tts-preview` now authenticates the real user (`auth.getUser()`)
