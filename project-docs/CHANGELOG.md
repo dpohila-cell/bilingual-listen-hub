@@ -4,6 +4,10 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Translation consolidation (P3.3):** Moved the shared translation prompt,
+  JSON-repair parsing, numbered response validation, and result alignment into
+  `supabase/functions/_shared/translation.ts`. `translate-batch` and `process-book` now
+  use the same translation helper; oversized file splitting is deferred.
 - **Code quality cleanup (P3.1/P3.2):** Removed dead audio/cache and splitter code,
   cleared ESLint errors with mechanical type/import/catch fixes, and left the global
   TypeScript `strict` flag unchanged.

@@ -127,12 +127,16 @@ unused playback-settings voice import, no-op prefetch placeholder comments, and 
 commented-out splitter implementation in `process-book`. Kept `buildAudioUrl`, which is
 still used by playback.
 
-### P3.3 — Split oversized files + consolidate translation · Planned
+### P3.3 — Translation consolidation · Done (2026-06-22)
 `process-book` (~30 KB), `Player.tsx` (~23 KB), `usePlayer.ts` (~15 KB) are hard to
 maintain. The translation prompt + JSON-repair + apply logic is copied in three places
 (`translate-all`, `translate-batch`, `process-book`). **Fix:** split into small modules
 and extract one shared translation helper in `supabase/functions/_shared/`. (P1.1 removes
 the `translate-all` copy already.)
+
+Consolidation is done: `translate-batch` and `process-book` now use the shared
+`supabase/functions/_shared/translation.ts` helper. Splitting oversized files is deferred
+to a later cleanup so this change stays focused on translation behavior.
 
 ### P3.4 — Real tests · Planned
 The suite is one trivial `true===true` test. **Fix:** add real tests for the upload flow,

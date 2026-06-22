@@ -5,6 +5,7 @@ import {
   generateText,
   getOpenAIApiKey,
 } from "../_shared/openai.ts";
+import { translateTexts } from "../_shared/translation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -495,44 +496,6 @@ async function extractTextFromPdfWithAI(
   return await extractTextWithAI(bytes, "application/pdf", openAIApiKey);
 }
 
-// ── Translation ─────────────────────────────────────────────────
-
-async function translateBatch(
-  sentences: string[],
-  openAIApiKey: string,
-  originalLanguage: string = "en"
-): Promise<Array<{ en: string | null; ru: string | null; sv: string | null }>> {
-  const langNames: Record<string, string> = { en: "English", ru: "Russian", sv: "Swedish" };
-  const sourceLang = langNames[originalLanguage] || "Russian";
-
-  const prompt = `I have sentences written in ${sourceLang}. I need you to translate them.
-
-IMPORTANT: The "en" field MUST contain the ENGLISH translation. The "ru" field MUST contain the RUSSIAN text. The "sv" field MUST contain the SWEDISH translation.
-${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ""}
-${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ""}
-
-Return ONLY a JSON array where each element has: {"en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
-No extra text, no markdown fences. Just the JSON array.
-
-Sentences to translate:
-${sentences.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}`;
-
-  try {
-    let content = await generateText(openAIApiKey, prompt);
-    if (!content) {
-      console.error("No content from AI");
-      return sentences.map(() => ({ en: null, ru: null, sv: null }));
-    }
-    if (content.startsWith("```")) {
-      content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
-    return JSON.parse(content);
-  } catch (err) {
-    console.error("translateBatch error:", err);
-    return sentences.map(() => ({ en: null, ru: null, sv: null }));
-  }
-}
-
 // ── Detect format from file extension ───────────────────────────
 
 function getFileExtension(filePath: string): string {
@@ -727,11 +690,17 @@ Deno.serve(async (req) => {
 
     // Step 2: Translate only the first playable batch
     const firstBatch = sentences.slice(0, FIRST_PLAYABLE_BATCH_SIZE);
-    const translations = await translateBatch(firstBatch, openAIApiKey, detectedLanguage);
+    let results: Array<{ en: string; ru: string; sv: string } | null>;
+    try {
+      results = await translateTexts(openAIApiKey, firstBatch, detectedLanguage);
+    } catch (e) {
+      console.error("First-batch translation failed:", e);
+      results = firstBatch.map(() => null);
+    }
 
-    for (let j = 0; j < firstBatch.length; j++) {
-      const t = translations[j];
-      if (!t || (!t.en && !t.ru && !t.sv)) continue; // skip if translation failed
+    for (let i = 0; i < firstBatch.length; i++) {
+      const t = results[i];
+      if (!t) continue;
       await supabase
         .from("sentences")
         .update({
@@ -740,7 +709,7 @@ Deno.serve(async (req) => {
           sv_translation: t.sv,
         })
         .eq("book_id", bookId)
-        .eq("sentence_order", j + 1);
+        .eq("sentence_order", i + 1);
     }
 
     await supabase
