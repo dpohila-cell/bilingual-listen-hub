@@ -103,11 +103,11 @@ there was no size limit, so a huge PDF could go into an expensive AI extraction.
 `ACCEPTED_FORMATS` and a 25 MB cap, rejecting with a toast before it reaches upload.
 **Affected:** `src/components/UploadZone.tsx`.
 
-### P2.3 — Card and settings polish · Planned
+### P2.3 — Card and settings polish · Done (2026-06-22)
 `BookCard` uses `parseInt(book.id)` on a UUID (often `NaN` → missing cover color) and can
 show `NaN%` progress when totals are 0; Settings has dead disabled sections.
-**Fix:** pick the cover color deterministically from the UUID, guard the percentage, label
-or remove the disabled sections. **Affects:** `src/components/BookCard.tsx`,
+**Fixed:** pick the cover color deterministically from the UUID, guard and clamp the
+percentage, and label the disabled sections as "Coming soon". **Affected:** `src/components/BookCard.tsx`,
 `src/pages/SettingsPage.tsx`.
 
 ---

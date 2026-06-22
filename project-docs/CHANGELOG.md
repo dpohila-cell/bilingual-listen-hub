@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Card and settings polish (P2.3):** Book cards now choose stable cover colors from
+  UUIDs, progress bars avoid invalid or oversized percentages, and disabled Settings
+  rows are labeled "Coming soon".
 - **Upload validation (P2.2):** Dropping or picking an unsupported file type, or any file
   over 25 MB, is now rejected with a clear message instead of being uploaded (and, for
   PDFs, sent into expensive AI extraction).

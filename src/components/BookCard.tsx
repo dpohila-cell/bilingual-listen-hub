@@ -17,10 +17,12 @@ const COVER_COLORS = [
 ];
 
 export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
-  const progressPercent = progress
-    ? Math.round((progress.completedSentences / progress.totalSentences) * 100)
+  const totalSentences = progress?.totalSentences ?? 0;
+  const progressPercent = totalSentences > 0
+    ? Math.min(100, Math.max(0, Math.round((progress!.completedSentences / totalSentences) * 100)))
     : 0;
-  const colorClass = COVER_COLORS[parseInt(book.id) % COVER_COLORS.length];
+  const colorHash = book.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  const colorClass = COVER_COLORS[colorHash % COVER_COLORS.length];
   const statusLabel = book.status === 'processing'
     ? 'Processing…'
     : book.status === 'error'
@@ -50,7 +52,7 @@ export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
           <span>·</span>
           <span>{book.chapterCount} chapters</span>
         </div>
-        {progress && (
+        {progress && totalSentences > 0 && (
           <div className="mt-1.5 flex items-center gap-2">
             <div className="h-1.5 flex-1 rounded-full bg-muted">
               <div
