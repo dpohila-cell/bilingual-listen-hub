@@ -135,8 +135,9 @@ export default function Library() {
       queryClient.invalidateQueries({ queryKey: ['books'] });
       queryClient.invalidateQueries({ queryKey: ['progress'] });
       toast.success('Book deleted');
-    } catch (err: any) {
-      toast.error('Failed to delete book: ' + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error('Failed to delete book: ' + message);
     } finally {
       setIsDeleting(false);
       setDeleteBookId(null);

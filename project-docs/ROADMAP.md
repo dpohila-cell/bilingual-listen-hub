@@ -114,14 +114,18 @@ percentage, and label the disabled sections as "Coming soon". **Affected:** `src
 
 ## P3 — Code quality & tests
 
-### P3.1 — Fix ESLint + enable strict TS gradually · Planned
-`npm run lint` fails with 11 errors / 15 warnings (explicit `any`, empty catch, missing
-hook deps, a forbidden `require`). Strict TypeScript is off. **Fix:** clear the errors,
-then turn on strict flags incrementally.
+### P3.1 - Fix ESLint errors - Done (2026-06-22)
+Cleared the lint errors without changing the global TypeScript `strict` flag: removed
+remaining explicit `any` usage in touched player/library paths, documented intentionally
+ignored storage catches, converted empty component prop interfaces to type aliases, and
+replaced the Tailwind CommonJS plugin `require` with an ESM import. Warnings may remain
+as lower-priority cleanup.
 
-### P3.2 — Remove dead code · Planned
-`shouldForceRegenerate` always returns false; `clearAudioCache` is a no-op; `VOICE_OPTIONS`
-is imported unused in playback settings; placeholder prefetch comments. **Fix:** delete.
+### P3.2 - Remove dead code - Done (2026-06-22)
+Deleted the always-false audio regeneration helper, the no-op `clearAudioCache` export,
+unused playback-settings voice import, no-op prefetch placeholder comments, and the old
+commented-out splitter implementation in `process-book`. Kept `buildAudioUrl`, which is
+still used by playback.
 
 ### P3.3 — Split oversized files + consolidate translation · Planned
 `process-book` (~30 KB), `Player.tsx` (~23 KB), `usePlayer.ts` (~15 KB) are hard to
@@ -133,6 +137,11 @@ the `translate-all` copy already.)
 ### P3.4 — Real tests · Planned
 The suite is one trivial `true===true` test. **Fix:** add real tests for the upload flow,
 deletion flow, translation retry/alignment, and player readiness.
+
+### P3.5 — Enable strict TypeScript (deferred from P3.1) · Planned
+`strict`, `noImplicitAny`, and `strictNullChecks` are off. Turning them on will surface
+many new errors across the codebase, so it is a separate incremental effort (enable one
+flag at a time, fix the fallout per area). Not started.
 
 ---
 

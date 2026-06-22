@@ -14,10 +14,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Sentence, Language } from '@/types';
+import type { Database } from '@/integrations/supabase/types';
+
+type SentenceRow = Database['public']['Tables']['sentences']['Row'];
 
 // Fetch all sentences with pagination to overcome the 1000-row limit
 async function fetchAllSentences(bookId: string) {
-  const allData: any[] = [];
+  const allData: SentenceRow[] = [];
   const batchSize = 1000;
   let offset = 0;
   let hasMore = true;
@@ -170,7 +173,7 @@ export default function Player() {
 
   const sentences: Sentence[] = useMemo(
     () =>
-      dbSentences.map((s: any) => ({
+      dbSentences.map((s: SentenceRow) => ({
         id: s.id,
         chapterId: '',
         sentenceOrder: s.sentence_order,

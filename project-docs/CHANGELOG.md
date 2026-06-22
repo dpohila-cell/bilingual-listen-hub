@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Code quality cleanup (P3.1/P3.2):** Removed dead audio/cache and splitter code,
+  cleared ESLint errors with mechanical type/import/catch fixes, and left the global
+  TypeScript `strict` flag unchanged.
 - **Card and settings polish (P2.3):** Book cards now choose stable cover colors from
   UUIDs, progress bars avoid invalid or oversized percentages, and disabled Settings
   rows are labeled "Coming soon".

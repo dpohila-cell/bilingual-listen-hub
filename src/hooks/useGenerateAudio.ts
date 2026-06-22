@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Language } from '@/types';
-import { clearAudioCache } from './usePlayer';
 
 interface GenerateAudioState {
   isGenerating: boolean;
@@ -22,10 +21,6 @@ function setVoiceCacheEntry(bookId: string, lang: string, voiceId: string) {
   const cache = getVoiceCache();
   cache[`${bookId}/${lang}`] = voiceId;
   localStorage.setItem(VOICE_CACHE_KEY, JSON.stringify(cache));
-}
-
-function shouldForceRegenerate(bookId: string, lang: string, voice: string | undefined): boolean {
-  return false;
 }
 
 export function useGenerateAudio(bookId: string | undefined) {
@@ -97,16 +92,16 @@ export function useGenerateAudio(bookId: string | undefined) {
       }
 
       if (voice) setVoiceCacheEntry(bookId, language, voice);
-      if (forceRegenerate) clearAudioCache();
 
       if (!silent) {
         setState(s => ({ ...s, isGenerating: false, progress: '' }));
       }
 
       return ready;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       if (!silent) {
-        setState({ isGenerating: false, progress: '', error: err.message });
+        setState({ isGenerating: false, progress: '', error: message });
       }
       console.error('Audio batch generation error:', err);
       return false;
@@ -124,8 +119,8 @@ export function useGenerateAudio(bookId: string | undefined) {
   ) => {
     if (!bookId) return false;
 
-    const force1 = forceRegenerate || shouldForceRegenerate(bookId, lang1, voice1);
-    const force2 = forceRegenerate || shouldForceRegenerate(bookId, lang2, voice2);
+    const force1 = forceRegenerate;
+    const force2 = forceRegenerate;
 
     if (force1 || force2) {
       resetRanges();

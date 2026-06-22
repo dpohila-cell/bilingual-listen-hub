@@ -27,14 +27,18 @@ function load(): VoiceSettings {
       const parsed = JSON.parse(stored);
       if (parsed.voices) return { ...getDefaults(), ...parsed };
     }
-  } catch {}
+  } catch {
+    // Ignore invalid stored voice settings and fall back to defaults.
+  }
   return getDefaults();
 }
 
 function save(settings: VoiceSettings) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {}
+  } catch {
+    // Ignore storage write failures; the in-memory voice setting still updates.
+  }
 }
 
 export function useVoiceSettings() {

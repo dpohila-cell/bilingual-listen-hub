@@ -41,14 +41,18 @@ function loadBookSettings(bookId: string, originalLanguage: Language): PlaybackS
         return { ...getDefaultSettings(originalLanguage), ...parsed };
       }
     }
-  } catch {}
+  } catch {
+    // Ignore invalid stored settings and fall back to defaults.
+  }
   return getDefaultSettings(originalLanguage);
 }
 
 function saveBookSettings(bookId: string, settings: PlaybackSettings, originalLanguage: Language) {
   try {
     localStorage.setItem(`player-settings-${bookId}`, JSON.stringify({ ...settings, originalLanguage }));
-  } catch {}
+  } catch {
+    // Ignore storage write failures; playback can continue with in-memory settings.
+  }
 }
 
 function getDefaultVoice(language: Language): string {
@@ -64,11 +68,6 @@ function getAudioUrl(bookId: string, language: Language, voice: string, sentence
     .from('audio')
     .getPublicUrl(`${bookId}/${language}/${sanitizeStorageSegment(voice)}/${String(sentenceOrder).padStart(5, '0')}.mp3`);
   return data.publicUrl;
-}
-
-// Cache cleared on voice change — URLs are always built fresh with cache buster
-export function clearAudioCache() {
-  // no-op now; URLs are always generated fresh
 }
 
 function buildAudioUrl(bookId: string, language: Language, voice: string, sentenceOrder: number): string {
@@ -269,9 +268,6 @@ export function usePlayer(
       }, 50);
     });
   }, []);
-
-  // Prefetch: no-op now, URLs are built fresh each time
-  // (kept as a placeholder to avoid removing the effect structure)
 
   const playSentence = useCallback(
     async (index: number, gen: number) => {

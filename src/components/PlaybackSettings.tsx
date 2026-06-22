@@ -1,4 +1,4 @@
-import { PlaybackSettings as PlaybackSettingsType, Language, VOICE_OPTIONS } from '@/types';
+import { PlaybackSettings as PlaybackSettingsType, Language } from '@/types';
 import { LanguagePicker } from './LanguagePicker';
 import { Timer, Gauge } from 'lucide-react';
 

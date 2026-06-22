@@ -98,43 +98,6 @@ function splitIntoSentences(text: string): string[] {
     return result.filter((s) => s.length > 1);
   }
 
-  /*
-  // Normalize line endings
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\t+/g, " ");
-
-  // Split into "blocks" by double-newline (paragraph breaks)
-  const blocks = normalized.split(/\n{2,}/);
-  const result: string[] = [];
-
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (!trimmed) continue;
-
-    // Split block by single newlines into lines
-    const lines = trimmed.split(/\n/).map((l) => l.trim()).filter(Boolean);
-
-    for (const line of lines) {
-      // Short lines (< 80 chars) that don't end with sentence punctuation
-      // are likely headings, chapter titles, numbering — keep as separate phrases
-      const isHeadingLike =
-        line.length < 80 && !/[.!?…»"]$/.test(line);
-
-      if (isHeadingLike) {
-        result.push(line);
-      } else {
-        // Regular text: split into sentences by punctuation
-        const sentences = line
-          .replace(/ {2,}/g, " ")
-          .split(/(?<=[.!?…»"])\s+/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 2);
-        result.push(...sentences);
-      }
-    }
-  }
-
-  return result.filter((s) => s.length > 1);
-  */
 }
 
 function getLanguageSample(sentences: string[]): string {
