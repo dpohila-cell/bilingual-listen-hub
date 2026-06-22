@@ -7,6 +7,11 @@ User-visible and project-visible changes, newest first.
 - **Security (P0.1):** `tts-preview` now authenticates the real user (`auth.getUser()`)
   before calling Google. Previously any caller with the endpoint could spend Google TTS
   quota; a non-user token now returns `401`. Deployed as `tts-preview` v4.
+- **Translation correctness (P1.2):** Sentence translations are now matched to the correct
+  sentence (by an explicit number echoed back by the model) instead of by list position, so
+  a malformed AI response can no longer shift translations onto the wrong sentences or
+  overwrite them with the original text. Sentences with a missing language are now
+  re-translated instead of being treated as done. Deployed.
 - **Translation/cost (P1.1):** Removed the whole-book background translation. The book is
   now translated only in a window around what's being played (plus the first batch at
   upload), so you only pay to translate what you actually listen to. Deleted the

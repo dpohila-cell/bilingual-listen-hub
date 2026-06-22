@@ -46,15 +46,20 @@ kept). `process-book` redeployed via the Supabase CLI. Audio was already windowe
 calls it) — delete it in the Supabase dashboard when convenient (the harness blocks
 deleting a live function from here).
 
-### P1.2 — Reliable translation · Planned
-Translation currently trusts the model to return exactly N items in array order and
-attaches them by index; a short/reordered response silently mis-assigns translations, and
-`translate-batch`'s fallback writes the original text into all three language fields. A
-sentence is also treated as "translated" whenever `en_translation` is non-null, so a row
-with English but empty Russian/Swedish is never retried.
-**Fix:** request structured JSON output, attach translations by sentence **id**, validate
-count, and re-translate partial rows. **Affects:** `translate-batch` (+ the shared
-translation helper once consolidated, see P3.3).
+### P1.2 — Reliable translation · Done (2026-06-18)
+Translation trusted the model to return exactly N items in array order and attached them by
+index; a short/reordered response mis-assigned translations, and the fallback wrote the
+original text into all three language fields. A sentence was also treated as "translated"
+whenever `en_translation` was non-null, so a row with English but empty Russian/Swedish was
+never retried.
+**Fixed:** `translate-batch` now treats a sentence as needing translation if **any** of
+en/ru/sv is empty (partial retry), tags each sentence `[n]` in the prompt and maps results
+back by `n` (id-aligned), validates each item (integer `n` in range, non-empty strings, no
+double-apply), drops the garbage fallback, and returns a `complete` flag. The client
+(`useTranslateBatch`) now retries incomplete ranges (in-flight guard prevents concurrent
+duplicates) instead of deduping a range forever. Deployed via CLI. Structured JSON output
+is deferred to P3.3 (consolidation). **Affected:** `supabase/functions/translate-batch/index.ts`,
+`src/hooks/useTranslateBatch.ts`.
 
 ### P1.3 — Honest `ready` status · Planned
 The client sets `status=ready` whenever `sentence_count > 0`, even if `process-book`

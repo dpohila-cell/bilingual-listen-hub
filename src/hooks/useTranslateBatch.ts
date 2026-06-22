@@ -5,15 +5,15 @@ import { toast } from 'sonner';
 const TRANSLATE_BATCH_SIZE = 10;
 
 export function useTranslateBatch(bookId: string | undefined) {
-  // Track which ranges have been requested to avoid duplicate calls
-  const requestedRangesRef = useRef<Set<number>>(new Set());
+  const completedRef = useRef<Set<number>>(new Set());
+  const inFlightRef = useRef<Set<number>>(new Set());
 
   const translateRange = useCallback(async (startOrder: number): Promise<boolean> => {
     if (!bookId) return false;
 
-    // Deduplicate
-    if (requestedRangesRef.current.has(startOrder)) return true;
-    requestedRangesRef.current.add(startOrder);
+    if (completedRef.current.has(startOrder)) return true;
+    if (inFlightRef.current.has(startOrder)) return false;
+    inFlightRef.current.add(startOrder);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -45,22 +45,23 @@ export function useTranslateBatch(bookId: string | undefined) {
         } else {
           console.error('Translate error:', result);
         }
-        // Allow retry by removing from dedup set
-        requestedRangesRef.current.delete(startOrder);
         return false;
       }
       const result = await response.json();
+      if (result.complete) completedRef.current.add(startOrder);
       // Return true only if new translations were actually created
-      return result.translated > 0;
+      return (result.translated ?? 0) > 0;
     } catch (err) {
       console.error('Translate batch error:', err);
-      requestedRangesRef.current.delete(startOrder);
       return false;
+    } finally {
+      inFlightRef.current.delete(startOrder);
     }
   }, [bookId]);
 
   const resetRanges = useCallback(() => {
-    requestedRangesRef.current.clear();
+    completedRef.current.clear();
+    inFlightRef.current.clear();
   }, []);
 
   return { translateRange, resetRanges, TRANSLATE_BATCH_SIZE };

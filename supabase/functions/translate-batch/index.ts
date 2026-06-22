@@ -87,10 +87,10 @@ Deno.serve(async (req) => {
     }
     const originalLanguage = book.original_language || "en";
 
-    // Get sentences that need translation (en_translation is null)
+    // Get sentences in the requested window.
     const { data: sentences, error: fetchErr } = await supabase
       .from("sentences")
-      .select("id, sentence_order, original_text, en_translation")
+      .select("id, sentence_order, original_text, en_translation, ru_translation, sv_translation")
       .eq("book_id", bookId)
       .gte("sentence_order", startOrder)
       .lt("sentence_order", startOrder + count)
@@ -102,10 +102,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Filter to only untranslated sentences
-    const untranslated = sentences.filter((s) => !s.en_translation);
+    const needsTranslation = (s: typeof sentences[number]) =>
+      !s.en_translation || !s.ru_translation || !s.sv_translation;
+    const untranslated = sentences.filter(needsTranslation);
     if (untranslated.length === 0) {
-      return new Response(JSON.stringify({ message: "Already translated", translated: 0 }), {
+      return new Response(JSON.stringify({ message: "Already translated", translated: 0, complete: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -122,13 +123,14 @@ IMPORTANT: The "en" field MUST contain the ENGLISH translation. The "ru" field M
 ${originalLanguage === "ru" ? 'The original text is in Russian. You MUST translate it into English for the "en" field - do NOT copy the Russian text into "en".' : ''}
 ${originalLanguage === "en" ? 'The original text is in English. You MUST translate it into Russian for the "ru" field and Swedish for the "sv" field.' : ''}
 
-Return ONLY a JSON array where each element has: {"en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
+Return ONLY a JSON array where each element has: {"n": 1, "en": "English text here", "ru": "Russian text here", "sv": "Swedish text here"}
+The "n" field MUST echo the sentence number shown in brackets.
 No extra text, no markdown fences. Just the JSON array.
 
 Sentences to translate:
-${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
+${untranslated.map((s, idx) => `[${idx + 1}] ${s.original_text}`).join("\n")}`;
 
-    let translations: Array<{ en: string; ru: string; sv: string }>;
+    let translations: Array<{ n: unknown; en: unknown; ru: unknown; sv: unknown }>;
     try {
       let content = await generateText(openAIApiKey, prompt);
       if (!content) {
@@ -141,7 +143,15 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
       if (content.startsWith("```")) {
         content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
       }
-      translations = repairAndParseJson(content) as Array<{ en: string; ru: string; sv: string }>;
+      const parsed = repairAndParseJson(content);
+      if (!Array.isArray(parsed)) {
+        console.error("AI response was not a JSON array");
+        return new Response(JSON.stringify({ error: "Translation failed", details: "AI response was not a JSON array" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      translations = parsed as Array<{ n: unknown; en: unknown; ru: unknown; sv: unknown }>;
     } catch (aiErr) {
       console.error("AI translation failed:", aiErr);
       const status = isInsufficientQuota(aiErr)
@@ -157,8 +167,24 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
 
     // Update each sentence with translations
     let updated = 0;
-    for (let j = 0; j < untranslated.length; j++) {
-      const t = translations[j] || { en: untranslated[j].original_text, ru: untranslated[j].original_text, sv: untranslated[j].original_text };
+    const applied = new Set<number>();
+    for (const t of translations) {
+      const n = t && typeof t === "object" ? Number(t.n) : NaN;
+      if (
+        !Number.isInteger(n) ||
+        n < 1 ||
+        n > untranslated.length ||
+        applied.has(n) ||
+        typeof t.en !== "string" ||
+        typeof t.ru !== "string" ||
+        typeof t.sv !== "string" ||
+        t.en.trim().length === 0 ||
+        t.ru.trim().length === 0 ||
+        t.sv.trim().length === 0
+      ) {
+        continue;
+      }
+
       const { error: updateErr } = await supabase
         .from("sentences")
         .update({
@@ -166,14 +192,18 @@ ${untranslated.map((s, idx) => `${idx + 1}. ${s.original_text}`).join("\n")}`;
           ru_translation: t.ru,
           sv_translation: t.sv,
         })
-        .eq("id", untranslated[j].id);
-      if (!updateErr) updated++;
+        .eq("id", untranslated[n - 1].id);
+      if (!updateErr) {
+        updated++;
+        applied.add(n);
+      }
     }
 
     console.log(`Translated ${updated} sentences`);
+    const complete = updated === untranslated.length;
 
     return new Response(
-      JSON.stringify({ success: true, translated: updated }),
+      JSON.stringify({ success: true, translated: updated, complete }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
