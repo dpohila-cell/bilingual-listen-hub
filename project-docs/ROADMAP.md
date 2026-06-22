@@ -17,18 +17,20 @@ user via `auth.getUser()`. Anyone who knew the endpoint could spend Google TTS q
 non-user token now returns `401` (previously returned audio). **Affected:**
 `supabase/functions/tts-preview/index.ts` (deployed v4).
 
-### P0.2 — Fix book deletion + tighten audio storage policy · Planned
+### P0.2 — Fix book deletion + tighten audio storage policy · Done (2026-06-18)
 Two problems in one area:
-- Deletion leaves paid files behind. The ebook is removed by the wrong key
-  (`[bookId]` instead of `books.file_path` = `userId/timestamp-name`), and the audio
-  deletion only walks two path levels while files live three levels deep
-  (`bookId/lang/voice/file`), so audio is not actually removed.
-- The `audio` bucket RLS policy `"Service role can manage audio" FOR ALL` has no role
-  restriction, so any authenticated user can read/overwrite/delete any audio; the upload
-  policy checks only `authenticated`, not ownership.
-**Fix:** delete by `file_path` and recurse the audio folder; restrict the `FOR ALL`
-policy to `service_role` and scope upload to the user's own book path. **Affects:**
-`src/pages/Library.tsx`, `supabase/migrations/*` (new migration).
+- Deletion left paid files behind. The ebook was removed by the wrong key (`[bookId]`
+  instead of `books.file_path`), and the audio deletion only walked two path levels while
+  files live three deep (`bookId/lang/voice/file`).
+- The `audio` `"Service role can manage audio" FOR ALL` policy applied to role `public`
+  (everyone), so any user could read/overwrite/delete any audio; the upload policy only
+  checked `authenticated`.
+**Fixed:** delete the ebook by `book.filePath` and walk all 3 audio levels; dropped both
+over-broad policies (service role bypasses RLS, clients never upload audio) and added a
+scoped `DELETE` policy gated on `user_owns_book`. Migration applied to prod; verified
+public read still serves audio (200) and the broad policies are gone. Client delete path
+is a manual check (needs a browser session). **Affected:** `src/pages/Library.tsx`,
+`src/types/index.ts`, `supabase/migrations/20260618120000_tighten_audio_storage_policies.sql`.
 
 ---
 

@@ -7,6 +7,11 @@ User-visible and project-visible changes, newest first.
 - **Security (P0.1):** `tts-preview` now authenticates the real user (`auth.getUser()`)
   before calling Google. Previously any caller with the endpoint could spend Google TTS
   quota; a non-user token now returns `401`. Deployed as `tts-preview` v4.
+- **Security / cost (P0.2):** Deleting a book now actually removes its source file and all
+  its generated audio (previously both were left behind, costing storage). Tightened the
+  `audio` storage policies so a user can no longer read/overwrite/delete other users'
+  audio — only delete audio for books they own. Migration applied to prod; playback
+  unaffected.
 - **Process:** Adopted the two-agent Claude+Codex workflow (mirrored from the Rolewise
   project). Added `CLAUDE.md`, `AGENTS.md`, `.PROMPTS.md`, and the `project-docs/` set
   (`ARCHITECTURE.md`, `PRODUCT_BEHAVIOR.md`, `ROADMAP.md`, this file). Claude is the

@@ -41,6 +41,7 @@ export default function Library() {
         author: b.author || '',
         originalLanguage: (b.original_language as Book['originalLanguage']) || 'en',
         fileFormat: 'txt',
+        filePath: b.file_path,
         chapterCount: 1,
         sentenceCount: b.sentence_count,
         createdAt: b.created_at,
@@ -90,26 +91,31 @@ export default function Library() {
     if (!deleteBookId) return;
     setIsDeleting(true);
     try {
+      const book = books.find((b) => b.id === deleteBookId);
+
       // Delete audio files from storage
       const { data: audioFiles } = await supabase.storage.from('audio').list(deleteBookId);
       if (audioFiles && audioFiles.length > 0) {
-        // List subdirectories (language folders)
-        for (const folder of audioFiles) {
-          const { data: langFiles } = await supabase.storage.from('audio').list(`${deleteBookId}/${folder.name}`);
-          if (langFiles && langFiles.length > 0) {
-            const paths = langFiles.map((f) => `${deleteBookId}/${folder.name}/${f.name}`);
-            await supabase.storage.from('audio').remove(paths);
+        const paths: string[] = [];
+        for (const lang of audioFiles) {
+          const { data: voiceFolders } = await supabase.storage.from('audio').list(`${deleteBookId}/${lang.name}`);
+          if (voiceFolders && voiceFolders.length > 0) {
+            for (const voice of voiceFolders) {
+              const { data: files } = await supabase.storage.from('audio').list(`${deleteBookId}/${lang.name}/${voice.name}`);
+              if (files && files.length > 0) {
+                paths.push(...files.map((file) => `${deleteBookId}/${lang.name}/${voice.name}/${file.name}`));
+              }
+            }
           }
         }
-        // Also try to remove top-level files
-        const topPaths = audioFiles.map((f) => `${deleteBookId}/${f.name}`);
-        await supabase.storage.from('audio').remove(topPaths);
+        if (paths.length > 0) {
+          await supabase.storage.from('audio').remove(paths);
+        }
       }
 
       // Delete ebook file from storage
-      const book = books.find((b) => b.id === deleteBookId);
-      if (book) {
-        await supabase.storage.from('ebooks').remove([`${deleteBookId}`]);
+      if (book?.filePath) {
+        await supabase.storage.from('ebooks').remove([book.filePath]);
       }
 
       // Delete progress, sentences, then book (order matters for FK)
