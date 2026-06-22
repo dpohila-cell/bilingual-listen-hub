@@ -4,6 +4,8 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Player controls (P2.1):** Rewind and fast-forward now skip 10 sentences backward or
+  forward. Previous and next still move one sentence at a time.
 - **Processing reliability (P1.4):** If saving a book's sentences fails partway, the book
   is now marked failed instead of being silently marked ready with missing text. A book
   only becomes "ready" once all of its sentences are saved.

@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { PlaybackSettings, Language, Sentence, VOICE_OPTIONS } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 
+const SKIP_AMOUNT = 10;
+
 function getSentenceText(sentence: Sentence, lang: Language, originalLanguage?: Language): string {
   const map: Record<Language, string> = {
     en: sentence.enTranslation,
@@ -414,6 +416,28 @@ export function usePlayer(
     }
   }, [stopCurrent, currentIndex, isPlaying, playSentence]);
 
+  const skipForward = useCallback(() => {
+    const target = Math.min(currentIndex + SKIP_AMOUNT, sentencesRef.current.length - 1);
+    stopCurrent();
+    setActiveLang(null);
+    setCurrentIndex(target);
+    if (isPlaying) {
+      const gen = playGenRef.current;
+      playSentence(target, gen);
+    }
+  }, [stopCurrent, currentIndex, isPlaying, playSentence]);
+
+  const skipBackward = useCallback(() => {
+    const target = Math.max(currentIndex - SKIP_AMOUNT, 0);
+    stopCurrent();
+    setActiveLang(null);
+    setCurrentIndex(target);
+    if (isPlaying) {
+      const gen = playGenRef.current;
+      playSentence(target, gen);
+    }
+  }, [stopCurrent, currentIndex, isPlaying, playSentence]);
+
   const goTo = useCallback((index: number) => {
     const clamped = Math.max(0, Math.min(index, sentencesRef.current.length - 1));
     stopCurrent();
@@ -446,6 +470,8 @@ export function usePlayer(
     togglePlay,
     goToNext,
     goToPrev,
+    skipForward,
+    skipBackward,
     goTo,
     text1: currentSentence ? getSentenceText(currentSentence, settings.language1, originalLanguage) : '',
     text2: currentSentence ? getSentenceText(currentSentence, settings.language2, originalLanguage) : '',

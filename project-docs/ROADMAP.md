@@ -90,11 +90,11 @@ is never usable. A transactional RPC was rejected for simplicity and to avoid a
 
 ## P2 — UX
 
-### P2.1 — Collapse duplicate player controls · Planned
+### P2.1 — Collapse duplicate player controls · Done (2026-06-22)
 Rewind/FastForward are wired to the same handlers as Prev/Next
 (`onRewind={goToPrev}`, `onForward={goToNext}`), so five buttons do three things.
-**Fix:** give them a distinct action (e.g. ±10 sentences) or remove them.
-**Affects:** `src/components/PlayerControls.tsx`, `src/pages/Player.tsx`.
+**Fixed:** Rewind/FastForward now skip backward/forward by 10 sentences while Prev/Next
+still move by one sentence. **Affected:** `src/hooks/usePlayer.ts`, `src/pages/Player.tsx`.
 
 ### P2.2 — Upload validation + size limit · Planned
 Drag-and-drop accepts any file (the `accept` filter only covers the file picker), and

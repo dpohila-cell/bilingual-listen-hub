@@ -230,6 +230,8 @@ export default function Player() {
     pause,
     goToNext,
     goToPrev,
+    skipForward,
+    skipBackward,
     goTo,
     text1,
     text2,
@@ -592,8 +594,8 @@ export default function Player() {
           onPlayPause={handlePlayPause}
           onPrev={goToPrev}
           onNext={goToNext}
-          onRewind={goToPrev}
-          onForward={goToNext}
+          onRewind={skipBackward}
+          onForward={skipForward}
           canPrev={currentIndex > 0}
           canNext={currentIndex < totalSentences - 1}
         />
