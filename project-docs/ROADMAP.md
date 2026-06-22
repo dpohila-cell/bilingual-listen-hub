@@ -144,10 +144,10 @@ JSON repair/alignment, sentence splitting, and upload validation helpers, then r
 the placeholder test with focused Vitest coverage for those behavior-neutral units.
 Broader upload/deletion/player integration tests remain future work.
 
-### P3.5 — Enable strict TypeScript (deferred from P3.1) · Planned
-`strict`, `noImplicitAny`, and `strictNullChecks` are off. Turning them on will surface
-many new errors across the codebase, so it is a separate incremental effort (enable one
-flag at a time, fix the fallout per area). Not started.
+### P3.5 — Enable strict TypeScript (deferred from P3.1) · Done (2026-06-22)
+Enabled TypeScript `strict` for the app config and removed the `noImplicitAny: false`
+override. This was nearly free because the codebase was already strict-clean; only the
+test `matchMedia` mock needed an explicit `onchange` type.
 
 ---
 

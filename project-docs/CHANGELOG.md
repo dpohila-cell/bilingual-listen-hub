@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Strict TypeScript (P3.5):** Enabled TypeScript `strict` for the app config and
+  removed the `noImplicitAny: false` override. The only code change needed was an
+  explicit DOM-compatible type for the test `matchMedia.onchange` mock.
 - **Real tests (P3.4):** Extracted pure translation JSON repair/alignment, sentence
   splitting, and upload validation helpers, then replaced the placeholder test with
   focused Vitest coverage for those units.
