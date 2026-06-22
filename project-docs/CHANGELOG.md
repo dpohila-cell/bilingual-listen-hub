@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-18
 
+- **Security (P0.1):** `tts-preview` now authenticates the real user (`auth.getUser()`)
+  before calling Google. Previously any caller with the endpoint could spend Google TTS
+  quota; a non-user token now returns `401`. Deployed as `tts-preview` v4.
 - **Process:** Adopted the two-agent Claude+Codex workflow (mirrored from the Rolewise
   project). Added `CLAUDE.md`, `AGENTS.md`, `.PROMPTS.md`, and the `project-docs/` set
   (`ARCHITECTURE.md`, `PRODUCT_BEHAVIOR.md`, `ROADMAP.md`, this file). Claude is the

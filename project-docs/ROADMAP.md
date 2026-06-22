@@ -10,11 +10,12 @@ and record it in `CHANGELOG.md`.
 
 ## P0 — Security & cost (do first)
 
-### P0.1 — Authenticate `tts-preview` · Planned
-`tts-preview` only checks that an `Authorization` header exists; it never validates the
-user via `auth.getUser()`. Anyone who knows the endpoint can spend Google TTS quota.
-**Fix:** add the same `getUser()` check the other functions use. **Affects:**
-`supabase/functions/tts-preview/index.ts`.
+### P0.1 — Authenticate `tts-preview` · Done (2026-06-18)
+`tts-preview` only checked that an `Authorization` header existed; it never validated the
+user via `auth.getUser()`. Anyone who knew the endpoint could spend Google TTS quota.
+**Fixed:** added the same `getUser()` check the other functions use. Verified live — a
+non-user token now returns `401` (previously returned audio). **Affected:**
+`supabase/functions/tts-preview/index.ts` (deployed v4).
 
 ### P0.2 — Fix book deletion + tighten audio storage policy · Planned
 Two problems in one area:
