@@ -96,11 +96,12 @@ Rewind/FastForward are wired to the same handlers as Prev/Next
 **Fixed:** Rewind/FastForward now skip backward/forward by 10 sentences while Prev/Next
 still move by one sentence. **Affected:** `src/hooks/usePlayer.ts`, `src/pages/Player.tsx`.
 
-### P2.2 — Upload validation + size limit · Planned
-Drag-and-drop accepts any file (the `accept` filter only covers the file picker), and
-there is no size limit, so a huge PDF can go into an expensive AI extraction. **Fix:**
-validate the extension on drop and enforce a max size before upload. **Affects:**
-`src/components/UploadZone.tsx`, `src/pages/UploadPage.tsx`.
+### P2.2 — Upload validation + size limit · Done (2026-06-22)
+Drag-and-drop accepted any file (the `accept` filter only covers the file picker), and
+there was no size limit, so a huge PDF could go into an expensive AI extraction.
+**Fixed:** `UploadZone` now validates every file (drag-drop and picker) against
+`ACCEPTED_FORMATS` and a 25 MB cap, rejecting with a toast before it reaches upload.
+**Affected:** `src/components/UploadZone.tsx`.
 
 ### P2.3 — Card and settings polish · Planned
 `BookCard` uses `parseInt(book.id)` on a UUID (often `NaN` → missing cover color) and can

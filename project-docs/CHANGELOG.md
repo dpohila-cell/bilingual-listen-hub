@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Upload validation (P2.2):** Dropping or picking an unsupported file type, or any file
+  over 25 MB, is now rejected with a clear message instead of being uploaded (and, for
+  PDFs, sent into expensive AI extraction).
 - **Player controls (P2.1):** Rewind and fast-forward now skip 10 sentences backward or
   forward. Previous and next still move one sentence at a time.
 - **Processing reliability (P1.4):** If saving a book's sentences fails partway, the book
