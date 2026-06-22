@@ -640,6 +640,8 @@ Deno.serve(async (req) => {
       });
     }
 
+    await supabase.from("books").update({ status: "processing" }).eq("id", bookId);
+
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
       .from("ebooks")
@@ -748,7 +750,14 @@ Deno.serve(async (req) => {
         sv_translation: null,
       }));
       const { error: insertError } = await supabase.from("sentences").insert(rows);
-      if (insertError) console.error(`Insert error at ${i}:`, insertError);
+      if (insertError) {
+        console.error(`Insert error at ${i}:`, insertError);
+        await supabase.from("books").update({ status: "error" }).eq("id", bookId);
+        return new Response(JSON.stringify({ error: "Failed to save sentences" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     console.log(`All ${sentences.length} originals saved. Translating first ${FIRST_PLAYABLE_BATCH_SIZE}...`);

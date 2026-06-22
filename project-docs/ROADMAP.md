@@ -74,10 +74,17 @@ states show clear status messages and remain deletable. **Affected:**
 `src/types/index.ts`, `src/pages/UploadPage.tsx`, `src/pages/Library.tsx`,
 `src/components/BookCard.tsx`.
 
-### P1.4 — `process-book` atomicity · Planned
-On re-processing, old sentences are deleted then new ones inserted without a transaction;
-a mid-way failure leaves the book in a half state. **Fix:** make the replace atomic (or
-insert-then-swap). **Affects:** `supabase/functions/process-book/index.ts`.
+### P1.4 — `process-book` atomicity · Done (2026-06-22)
+On re-processing, old sentences were deleted then new ones inserted in batches that
+**swallowed errors**, after which the book was unconditionally marked `ready` — so a
+partially-inserted book could be presented as ready.
+**Fixed (status-guard, not a DB transaction):** `process-book` sets `status='processing'`
+at the start of work, and a batch insert error is now fatal — it marks the book `error`
+and returns `500` instead of continuing. The final `ready` is therefore only reached when
+all sentences inserted. Combined with P1.3 (only `ready` books open), a half-replaced book
+is never usable. A transactional RPC was rejected for simplicity and to avoid a
+`SECURITY DEFINER` function that could wipe arbitrary books. Deployed via CLI. **Affected:**
+`supabase/functions/process-book/index.ts`.
 
 ---
 

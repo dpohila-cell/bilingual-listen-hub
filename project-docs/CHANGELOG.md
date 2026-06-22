@@ -4,6 +4,9 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-22
 
+- **Processing reliability (P1.4):** If saving a book's sentences fails partway, the book
+  is now marked failed instead of being silently marked ready with missing text. A book
+  only becomes "ready" once all of its sentences are saved.
 - **Upload / library correctness (P1.3):** Upload no longer marks a book `ready` just
   because some sentences exist. Ready books open normally and get the first audio batch;
   still-processing books return to the library with a processing message; failed books
