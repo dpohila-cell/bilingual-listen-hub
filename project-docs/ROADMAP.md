@@ -86,6 +86,28 @@ is never usable. A transactional RPC was rejected for simplicity and to avoid a
 `SECURITY DEFINER` function that could wipe arbitrary books. Deployed via CLI. **Affected:**
 `supabase/functions/process-book/index.ts`.
 
+### P1.5 — PDF extraction + no stuck `processing` · Done (2026-06-23)
+A PDF upload hung forever on "Processing". Root causes: (1) `generateFromPdf`
+sent OpenAI bare base64 instead of a data URL, so every PDF failed at extraction
+(PDF had never actually worked); (2) the `process-book` catch-all returned 500
+without setting a status, stranding the book in `processing`.
+**Fixed:** `generateFromPdf` builds `data:<mime>;base64,…` via a shared
+`buildFileDataUrl` helper (unit-tested); the catch-all best-effort marks the book
+`error`, scoped to an ownership-verified book and guarded by `.eq('status','processing')`
+so it can't overwrite a concurrent `ready`. Redeployed `process-book` v11; the
+stuck row was set to `error`. **Affected:** `supabase/functions/process-book/index.ts`,
+`supabase/functions/_shared/openai.ts`, `supabase/functions/_shared/fileDataUrl.ts`,
+`src/test/openai.test.ts`.
+
+### P1.6 — Robust large-PDF extraction · Planned
+The PDF path now works but is not robust for big files. Inline base64 in the
+OpenAI Responses API is capped (~33.5M chars ≈ ~24 MB) while uploads are allowed
+up to 25 MB, so a large PDF can still fail; the in-function base64 conversion
+(`Array.from(bytes).map(...).join('')`) is memory-heavy; and a long PDF asked for
+in one response can be truncated. With P1.5 these now fail honestly (book marked
+`error`) rather than hanging. Options: lower the PDF size cap, switch to a
+streaming/chunked base64 encoder, or use the OpenAI Files API for large PDFs.
+
 ---
 
 ## P2 — UX

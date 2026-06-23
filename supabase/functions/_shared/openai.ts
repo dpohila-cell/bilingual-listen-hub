@@ -1,3 +1,5 @@
+import { buildFileDataUrl } from "./fileDataUrl.ts";
+
 type ResponseContentPart =
   | { type: "input_text"; text: string }
   | { type: "input_file"; filename: string; file_data: string };
@@ -118,7 +120,7 @@ export async function generateFromPdf(
   apiKey: string,
   prompt: string,
   fileBase64: string,
-  options: { model?: string; filename?: string; maxOutputTokens?: number } = {},
+  options: { model?: string; filename?: string; maxOutputTokens?: number; mimeType?: string } = {},
 ): Promise<string> {
   return createOpenAIResponse(
     apiKey,
@@ -130,7 +132,7 @@ export async function generateFromPdf(
           {
             type: "input_file",
             filename: options.filename || "document.pdf",
-            file_data: fileBase64,
+            file_data: buildFileDataUrl(fileBase64, options.mimeType),
           },
           { type: "input_text", text: prompt },
         ],

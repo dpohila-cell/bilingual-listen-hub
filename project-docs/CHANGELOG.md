@@ -2,6 +2,22 @@
 
 User-visible and project-visible changes, newest first.
 
+## 2026-06-23
+
+- **PDF upload fix + honest failure status (P1.5):** Two problems made a PDF
+  upload (e.g. "The Little Prince") hang forever on "Processing". (1) PDF text
+  extraction sent the file to OpenAI as bare base64, but the Responses API
+  expects a data URL (`data:application/pdf;base64,…`), so every PDF failed —
+  PDF extraction had in fact never worked. (2) The `process-book` catch-all
+  returned 500 without setting the book's status, leaving it stuck in
+  `processing` permanently. **Fixed:** `generateFromPdf` now builds a proper
+  data URL (via a shared `buildFileDataUrl` helper, with a Vitest unit test),
+  and on any unexpected failure `process-book` best-effort marks the book
+  `error` — but only a book whose ownership it already verified, and only while
+  its status is still `processing` (so a concurrent run that already reached
+  `ready` is never clobbered). `process-book` redeployed (v11). The one stuck
+  "The Little Prince" row was set to `error` so it can be deleted/re-uploaded.
+
 ## 2026-06-22
 
 - **Strict TypeScript (P3.5):** Enabled TypeScript `strict` for the app config and

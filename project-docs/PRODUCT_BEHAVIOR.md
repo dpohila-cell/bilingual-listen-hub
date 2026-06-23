@@ -65,6 +65,11 @@ Agreed rules:
 
 ## Failure behavior
 
+- A book must never get stuck in `processing`. If `process-book` fails for any
+  reason (bad/oversized file, extraction error, OpenAI/Google error, unexpected
+  throw), it marks the book `error` so the library shows a real failure the user
+  can delete and re-upload — it must not hang as "Processing" forever. `ready` is
+  reached only when the book is genuinely processed.
 - If audio cannot be generated (e.g. Google billing disabled, invalid voice),
   `generate-audio` returns a real error (`502` with Google's message) and the player shows
   it — it must not stop silently.

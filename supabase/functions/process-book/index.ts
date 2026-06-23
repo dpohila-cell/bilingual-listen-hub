@@ -463,6 +463,9 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let supabaseAdmin: ReturnType<typeof createClient> | null = null;
+  let processingBookId: string | null = null;
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -488,6 +491,7 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    supabaseAdmin = supabase;
     const { bookId, filePath } = await req.json();
 
     if (!bookId || !filePath) {
@@ -519,6 +523,7 @@ Deno.serve(async (req) => {
       });
     }
 
+    processingBookId = bookId;
     await supabase.from("books").update({ status: "processing" }).eq("id", bookId);
 
     // Download file from storage
@@ -676,6 +681,17 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     console.error("Process book error:", err);
+    if (supabaseAdmin && processingBookId) {
+      try {
+        await supabaseAdmin
+          .from("books")
+          .update({ status: "error" })
+          .eq("id", processingBookId)
+          .eq("status", "processing");
+      } catch {
+        // Best-effort status update; preserve the original 500 response.
+      }
+    }
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
