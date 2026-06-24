@@ -4,6 +4,14 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-24
 
+- **Russian audio quality + clipped-start guard (P1.8/P1.9):** Russian TTS now uses
+  Google Wavenet voices with SSML and a 300 ms leading break, while English and Swedish
+  remain on Chirp3-HD plain text input. Old stored Russian Chirp voice IDs fall back to
+  the first current Russian voice instead of breaking playback. The player now waits for
+  `canplay` before calling `play()`, with a 3-second timeout fallback so readiness can
+  never deadlock. **Deploy pending:** `generate-audio` and `tts-preview` have not yet
+  been redeployed.
+
 - **Robust large-PDF extraction (P1.6):** PDF processing now tries a real text-layer
   parser before OpenAI, avoiding the one-response AI output cap that truncated long PDFs
   after roughly 25-30 pages. The parser is dynamically imported inside a guarded function:

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildSynthesisInput } from "../_shared/tts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,7 +10,7 @@ const corsHeaders = {
 
 const DEFAULT_VOICES: Record<string, { languageCode: string; name: string }> = {
   en: { languageCode: "en-US", name: "en-US-Chirp3-HD-Charon" },
-  ru: { languageCode: "ru-RU", name: "ru-RU-Chirp3-HD-Charon" },
+  ru: { languageCode: "ru-RU", name: "ru-RU-Wavenet-D" },
   sv: { languageCode: "sv-SE", name: "sv-SE-Chirp3-HD-Aoede" },
 };
 
@@ -26,7 +27,7 @@ async function synthesize(text: string, languageCode: string, voiceName: string,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        input: { text },
+        input: buildSynthesisInput(text, voiceName),
         voice: { languageCode, name: voiceName },
         audioConfig: { audioEncoding: "MP3", sampleRateHertz: 24000 },
       }),

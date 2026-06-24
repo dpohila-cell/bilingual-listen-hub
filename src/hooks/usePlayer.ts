@@ -128,6 +128,8 @@ async function waitForAudioFile(bookId: string, language: Language, voice: strin
 function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): Promise<'played' | 'skipped'> {
   return new Promise((resolve) => {
     let resolved = false;
+    let readinessTimer: ReturnType<typeof setTimeout> | null = null;
+    let playRejectTimer: ReturnType<typeof setTimeout> | null = null;
     const normalizedSpeed = Number.isFinite(speed) ? Math.min(2, Math.max(0.5, speed)) : 1;
 
     const done = (result: 'played' | 'skipped') => {
@@ -150,11 +152,48 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
       console.warn('Audio playback error after confirmed file, skipping');
       done('skipped');
     };
+    const hasExpectedSource = () => {
+      return audio.getAttribute('src') === url || audio.currentSrc === url || audio.src === url;
+    };
+    const isStillCurrent = () => hasExpectedSource() && !audio.error;
+    const stopReadinessWait = () => {
+      if (readinessTimer) {
+        clearTimeout(readinessTimer);
+        readinessTimer = null;
+      }
+      audio.removeEventListener('canplay', onReadyToPlay);
+    };
+    const startPlayback = () => {
+      if (resolved) return;
+      stopReadinessWait();
+      if (!isStillCurrent()) {
+        onError();
+        return;
+      }
+      applySpeed();
+      audio.play().catch(() => {
+        // play() rejected — skip after timeout if no error event fires
+        playRejectTimer = setTimeout(() => {
+          if (!resolved) {
+            audio.pause();
+            audio.removeAttribute('src');
+            audio.load();
+            done('skipped');
+          }
+        }, 5000);
+      });
+    };
+    const onReadyToPlay = () => {
+      startPlayback();
+    };
     const cleanup = () => {
+      if (readinessTimer) clearTimeout(readinessTimer);
+      if (playRejectTimer) clearTimeout(playRejectTimer);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
       audio.removeEventListener('loadedmetadata', applySpeed);
       audio.removeEventListener('canplay', applySpeed);
+      audio.removeEventListener('canplay', onReadyToPlay);
     };
 
     audio.addEventListener('ended', onEnded);
@@ -165,17 +204,12 @@ function playAudioElement(audio: HTMLAudioElement, url: string, speed: number): 
     audio.currentTime = 0;
     audio.src = url;
     applySpeed();
-    audio.play().catch(() => {
-      // play() rejected — skip after timeout if no error event fires
-      setTimeout(() => {
-        if (!resolved) {
-          audio.pause();
-          audio.removeAttribute('src');
-          audio.load();
-          done('skipped');
-        }
-      }, 5000);
-    });
+    if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+      audio.addEventListener('canplay', onReadyToPlay, { once: true });
+      readinessTimer = setTimeout(startPlayback, 3000);
+      return;
+    }
+    startPlayback();
   });
 }
 

@@ -13,9 +13,10 @@ bilingually (original language + one target language) with generated speech.
 - Supported languages: English (`en`), Russian (`ru`), Swedish (`sv`).
 - A book has one `original_language`; the second playback language is the user's choice
   (default: the original's counterpart — `en` ↔ `ru`).
-- Voices: Google Chirp3-HD family, the single source of truth is `VOICE_OPTIONS` in
-  `src/types/index.ts` (currently Charon/Fenrir male, Aoede/Kore female per language).
-  The user picks and previews a voice per language in Settings.
+- Voices: English and Swedish use Google Chirp3-HD voices; Russian uses Google Wavenet
+  voices with SSML so punctuation and phrase starts are handled more clearly. The single
+  source of truth is `VOICE_OPTIONS` in `src/types/index.ts`. The user picks and previews
+  a voice per language in Settings.
 
 ## Upload
 
@@ -68,6 +69,8 @@ Agreed rules:
 - Plays language 1, pauses (`pauseDuration`), plays language 2, pauses, advances.
 - Playback order, speed, and pause length are per-book settings.
 - Pausing or seeking immediately cancels in-flight playback.
+- Before each clip starts, playback waits for browser `canplay` readiness and falls back
+  to starting after about 3 seconds so it cannot hang forever.
 
 ## Failure behavior
 

@@ -134,30 +134,29 @@ text with injected hidden characters. `npx tsc --noEmit -p tsconfig.app.json` cl
 **Deploy pending:** `process-book` redeploy to Supabase was blocked by the environment
 pending explicit user authorization — not yet live in production.
 
-### P1.8 — Russian TTS quality · Planned (reported 2026-06-24)
+### P1.8 — Russian TTS quality · Done (code) · deploy pending (2026-06-24)
 Russian audio is poor — commas ignored, words run together — while English from the same
 pipeline reads fine. The text is sent as plain text (no SSML) with the Chirp3-HD Russian
 voice; Chirp3-HD is the newest "smart" voice family but does **not** support SSML and is
 markedly weaker on Russian prosody than on English. Because the same punctuation reads
 correctly in English, the cause is the voice, not our text.
-**Fix direction (cheapest first, before any paid vendor):** switch the Russian voice to a
-Google Wavenet (or Standard) tier, which supports SSML, and add explicit `<break>` pauses
-at commas/periods. This is a `VOICE_OPTIONS` / `generate-audio` `DEFAULT_VOICES` change and
-is auditable by ear. Note: this revisits the locked Chirp3-HD decision for Russian, so it
-is a deliberate product change. A paid aggregator (ElevenLabs/Azure) is a later fallback
-only if Wavenet+SSML is still unsatisfactory. Quick sanity check: confirm the stored
-Russian translation actually keeps spaces/punctuation (likely fine, since English is fine).
+**Fixed in code:** Russian voices now use Wavenet ids in `VOICE_OPTIONS` and
+`generate-audio` defaults to `ru-RU-Wavenet-D`. A shared TTS helper sends Chirp voices as
+plain `{ text }` and non-Chirp voices as SSML with a leading 300 ms break and XML-escaped
+text; `generate-audio` and `tts-preview` both use it. Stored old Russian Chirp voice ids
+fall back to the current first Russian voice. **Deploy pending:** `generate-audio` and
+`tts-preview` have not yet been redeployed.
 
-### P1.9 — Clipped phrase starts · Planned (reported 2026-06-24)
+### P1.9 — Clipped phrase starts · Done (code) · deploy pending (2026-06-24)
 The beginning of almost every phrase is swallowed. Two compounding causes: (1) **Bluetooth
 A2DP idle wake-up** — headphones power down the link during the inter-sentence pauses and
 clip ~0.1–0.3 s when the next clip starts (real, known behavior); (2) **the player starts
 playback before buffering** — `playAudioElement` sets `audio.src` and calls `audio.play()`
 immediately, without waiting for `canplay`/`canplaythrough`, so the first frames can drop.
-**Fix direction:** add a short leading silence (~250–400 ms) to each clip (e.g. a leading
-SSML `<break>` on a Wavenet voice — ties into P1.8), and/or keep the audio link warm with a
-silent keep-alive loop so Bluetooth never idles between sentences; also wait for `canplay`
-before `play()`.
+**Fixed in code:** Wavenet SSML clips get a leading 300 ms break through P1.8, and
+`playAudioElement` now waits for `canplay` before calling `play()`. The wait has a
+3-second timeout fallback and cleanup removes both the listener and timer, so readiness
+can never deadlock. Silent keep-alive remains deferred.
 
 ---
 

@@ -20,12 +20,30 @@ function getDefaults(): VoiceSettings {
   };
 }
 
+function getValidVoice(lang: Language, voiceId: unknown): string {
+  if (typeof voiceId === 'string' && VOICE_OPTIONS[lang].some((voice) => voice.id === voiceId)) {
+    return voiceId;
+  }
+  return VOICE_OPTIONS[lang][0].id;
+}
+
 function load(): VoiceSettings {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed.voices) return { ...getDefaults(), ...parsed };
+      if (parsed.voices) {
+        const defaults = getDefaults();
+        return {
+          ...defaults,
+          ...parsed,
+          voices: {
+            en: getValidVoice('en', parsed.voices.en),
+            ru: getValidVoice('ru', parsed.voices.ru),
+            sv: getValidVoice('sv', parsed.voices.sv),
+          },
+        };
+      }
     }
   } catch {
     // Ignore invalid stored voice settings and fall back to defaults.
@@ -56,7 +74,7 @@ export function useVoiceSettings() {
   }, []);
 
   const getVoice = useCallback((lang: Language) => {
-    return settings.voices[lang] || VOICE_OPTIONS[lang][0].id;
+    return getValidVoice(lang, settings.voices[lang]);
   }, [settings]);
 
   return { voiceSettings: settings, setVoice, getVoice };

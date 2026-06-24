@@ -19,7 +19,7 @@ export interface VoiceOption {
   gender: 'Male' | 'Female';
 }
 
-// Google Chirp3-HD voices — newest, most natural generation (replaces legacy WaveNet).
+// Google TTS voices: en/sv use Chirp3-HD; ru uses Wavenet for SSML-capable Russian prosody.
 export const VOICE_OPTIONS: Record<Language, VoiceOption[]> = {
   en: [
     { id: 'en-US-Chirp3-HD-Charon', name: 'James', gender: 'Male' },
@@ -28,10 +28,10 @@ export const VOICE_OPTIONS: Record<Language, VoiceOption[]> = {
     { id: 'en-US-Chirp3-HD-Kore', name: 'Emily', gender: 'Female' },
   ],
   ru: [
-    { id: 'ru-RU-Chirp3-HD-Charon', name: 'Dmitry', gender: 'Male' },
-    { id: 'ru-RU-Chirp3-HD-Aoede', name: 'Anna', gender: 'Female' },
-    { id: 'ru-RU-Chirp3-HD-Fenrir', name: 'Alexei', gender: 'Male' },
-    { id: 'ru-RU-Chirp3-HD-Kore', name: 'Elena', gender: 'Female' },
+    { id: 'ru-RU-Wavenet-D', name: 'Dmitry', gender: 'Male' },
+    { id: 'ru-RU-Wavenet-A', name: 'Anna', gender: 'Female' },
+    { id: 'ru-RU-Wavenet-B', name: 'Alexei', gender: 'Male' },
+    { id: 'ru-RU-Wavenet-C', name: 'Elena', gender: 'Female' },
   ],
   sv: [
     { id: 'sv-SE-Chirp3-HD-Aoede', name: 'Astrid', gender: 'Female' },

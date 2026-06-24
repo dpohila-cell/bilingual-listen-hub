@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildSynthesisInput } from "../_shared/tts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,7 +56,7 @@ serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: { text },
+          input: buildSynthesisInput(text, voice),
           voice: { languageCode, name: voice },
           audioConfig: { audioEncoding: "MP3", sampleRateHertz: 24000 },
         }),
