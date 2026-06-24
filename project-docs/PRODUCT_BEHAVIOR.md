@@ -24,6 +24,11 @@ bilingually (original language + one target language) with generated speech.
   with built-in parsers.
 - A book becomes `ready` only when it is genuinely processed. A book that is still
   `processing` (or failed) must not be presented or opened as if ready.
+- Extracted text is sanitized before it is stored as `sentences.original_text` (the text
+  the TTS reads verbatim). Hidden/invisible characters that would make speech synthesis
+  mispronounce or stall — control characters, zero-width and bidi marks, soft hyphens,
+  BOM — are removed, and non-standard spaces (e.g. non-breaking space) are normalized to
+  a regular space; paragraph newlines are preserved so sentence splitting still works.
 
 ## Translation and audio — windowed model (LOCKED DECISION, 2026-06-18)
 

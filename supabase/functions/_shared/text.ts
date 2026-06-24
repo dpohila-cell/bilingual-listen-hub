@@ -1,3 +1,15 @@
+export function sanitizeExtractedText(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\t/g, " ")
+    .replace(/[\u0000-\u0009\u000B-\u001F\u007F\u0080-\u009F]/g, "")
+    .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00AD]/g, "")
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "")
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .normalize("NFC");
+}
+
 export function splitIntoSentences(text: string): string[] {
   {
     const normalized = text

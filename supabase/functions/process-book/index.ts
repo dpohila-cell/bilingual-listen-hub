@@ -5,7 +5,7 @@ import {
   generateText,
   getOpenAIApiKey,
 } from "../_shared/openai.ts";
-import { splitIntoSentences } from "../_shared/text.ts";
+import { sanitizeExtractedText, splitIntoSentences } from "../_shared/text.ts";
 import { translateTexts } from "../_shared/translation.ts";
 
 const corsHeaders = {
@@ -578,8 +578,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Strip null bytes that break Postgres
-    text = stripNullBytes(text);
+    text = sanitizeExtractedText(text);
 
     const sentences = splitIntoSentences(text);
 

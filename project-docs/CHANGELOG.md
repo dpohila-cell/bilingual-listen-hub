@@ -2,6 +2,19 @@
 
 User-visible and project-visible changes, newest first.
 
+## 2026-06-24
+
+- **Clean text before audio (P1.7):** The text extracted from an uploaded book is now
+  cleaned before it is saved, so the spoken audio no longer reads invisible junk. Hidden
+  characters that don't show on screen but confuse text-to-speech — control characters,
+  zero-width marks, text-direction marks, soft hyphens, byte-order marks — are removed,
+  and unusual spaces (like the non-breaking space) become ordinary spaces. Paragraph
+  breaks are kept, so the split into sentences is unchanged. Implemented as one shared
+  `sanitizeExtractedText` helper called at the single point in `process-book` where every
+  file format converges, with a unit test built from public-domain text seeded with hidden
+  characters. Typecheck clean, tests 20/20. **Deploy pending:** the `process-book`
+  redeploy was blocked pending explicit authorization, so this is not yet live.
+
 ## 2026-06-23
 
 - **PDF upload fix + honest failure status (P1.5):** Two problems made a PDF

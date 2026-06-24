@@ -108,6 +108,23 @@ in one response can be truncated. With P1.5 these now fail honestly (book marked
 `error`) rather than hanging. Options: lower the PDF size cap, switch to a
 streaming/chunked base64 encoder, or use the OpenAI Files API for large PDFs.
 
+### P1.7 — Sanitize extracted text before storage · Done (code) · deploy pending (2026-06-24)
+Hidden/invisible characters leaked from extraction into `sentences.original_text` (the
+text TTS reads verbatim) — control chars, zero-width and bidi marks, soft hyphens, BOM,
+non-standard spaces — making audio speak garbage. Only `stripNullBytes` ran globally;
+per-format cleanup was uneven.
+**Fixed:** added a single pure `sanitizeExtractedText` in
+`supabase/functions/_shared/text.ts` and call it at the one chokepoint in `process-book`
+where all format extractors converge, just before `splitIntoSentences`. It normalizes
+line endings, drops C0/C1 controls (preserving `\n`), removes zero-width/bidi/soft-hyphen/
+BOM, normalizes Unicode spaces, and NFC-normalizes — without touching paragraph newlines
+so sentence splitting is unchanged. Covered by a Vitest unit test using public-domain
+text with injected hidden characters. `npx tsc --noEmit -p tsconfig.app.json` clean,
+`npm test` 20/20. **Affected:** `supabase/functions/_shared/text.ts`,
+`supabase/functions/process-book/index.ts`, `src/test/text.test.ts`.
+**Deploy pending:** `process-book` redeploy to Supabase was blocked by the environment
+pending explicit user authorization — not yet live in production.
+
 ---
 
 ## P2 — UX
