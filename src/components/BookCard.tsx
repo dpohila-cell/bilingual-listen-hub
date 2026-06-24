@@ -37,9 +37,20 @@ export function BookCard({ book, progress, onClick, onEdit, onDelete }: BookCard
       className="flex gap-4 rounded-xl bg-card p-4 text-left shadow-sm border border-border transition-shadow hover:shadow-md w-full"
     >
       <div
-        className={`flex h-24 w-16 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${colorClass}`}
+        className={`relative flex h-24 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br ${colorClass}`}
       >
         <BookOpen className="h-6 w-6 text-primary-foreground" />
+        {book.coverUrl && (
+          <img
+            src={book.coverUrl}
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 h-full w-full rounded-lg object-cover"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
+        )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-between">
         <div>

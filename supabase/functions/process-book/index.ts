@@ -12,6 +12,11 @@ import {
   parseOpfMetadata,
   type BookMetadata,
 } from "../_shared/metadata.ts";
+import {
+  extractFb2Binary,
+  findEpubCoverHref,
+  findFb2CoverBinaryId,
+} from "../_shared/cover.ts";
 import { sanitizeExtractedText, splitIntoSentences } from "../_shared/text.ts";
 import { translateTexts } from "../_shared/translation.ts";
 
@@ -22,6 +27,12 @@ const corsHeaders = {
 };
 
 const FIRST_PLAYABLE_BATCH_SIZE = 10;
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
+
+interface ExtractedCover {
+  bytes: Uint8Array;
+  contentType: string;
+}
 
 // ── Text utilities ──────────────────────────────────────────────
 
@@ -59,6 +70,70 @@ function stripXmlTags(xml: string): string {
   // Remove all remaining tags
   clean = clean.replace(/<[^>]+>/g, "");
   return clean;
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeZipPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
+  }
+  return parts.join("/");
+}
+
+function resolveEpubHref(opfDir: string, href: string): string {
+  const cleanHref = href.split(/[?#]/, 1)[0];
+  const path = cleanHref.startsWith("/") ? cleanHref.slice(1) : `${opfDir}${cleanHref}`;
+  return normalizeZipPath(safeDecodeURIComponent(path));
+}
+
+function getContentTypeFromPath(path: string): string {
+  const ext = getFileExtension(path);
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  return "application/octet-stream";
+}
+
+function isImageContentType(contentType: string): boolean {
+  return contentType.toLowerCase().startsWith("image/");
+}
+
+function getCoverExtension(contentType: string): string {
+  const type = contentType.toLowerCase().split(";")[0].trim();
+  if (type === "image/png") return "png";
+  if (type === "image/webp") return "webp";
+  if (type === "image/gif") return "gif";
+  return "jpg";
+}
+
+function validCoverOrNull(cover: ExtractedCover | null): ExtractedCover | null {
+  if (!cover) return null;
+  if (cover.bytes.length === 0 || cover.bytes.length > MAX_COVER_BYTES) return null;
+  if (!isImageContentType(cover.contentType)) return null;
+  return cover;
+}
+
+function decodeBase64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function getLanguageSample(sentences: string[]): string {
@@ -252,10 +327,11 @@ function extractTextFromMobi(bytes: Uint8Array): string {
 
 // ── EPUB extraction ─────────────────────────────────────────────
 
-function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMetadata } {
+function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMetadata; cover: ExtractedCover | null } {
   const bytes = new Uint8Array(buffer);
   const files = unzipSync(bytes);
   let meta: BookMetadata = {};
+  let cover: ExtractedCover | null = null;
 
   let opfPath = "";
   const containerPath = Object.keys(files).find((f) =>
@@ -274,6 +350,23 @@ function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMet
   if (opfPath && files[opfPath]) {
     const opfXml = new TextDecoder("utf-8").decode(files[opfPath]);
     meta = parseOpfMetadata(opfXml);
+
+    try {
+      const coverHref = findEpubCoverHref(opfXml);
+      if (coverHref) {
+        const coverPath = resolveEpubHref(opfDir, coverHref);
+        const coverBytes = files[coverPath] || files[safeDecodeURIComponent(coverPath)];
+        if (coverBytes) {
+          cover = validCoverOrNull({
+            bytes: coverBytes,
+            contentType: getContentTypeFromPath(coverPath),
+          });
+        }
+      }
+    } catch {
+      cover = null;
+    }
+
     const manifest: Record<string, string> = {};
     const itemRegex = /<item\s+[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*/gi;
     let m;
@@ -305,7 +398,7 @@ function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMet
     if (text.length > 0) textParts.push(text);
   }
 
-  return { text: textParts.join("\n\n"), meta };
+  return { text: textParts.join("\n\n"), meta, cover };
 }
 
 // ── DOCX extraction ─────────────────────────────────────────────
@@ -345,6 +438,53 @@ function extractTextFromFb2(xml: string): string {
 
   const bodyHtml = parts.join("\n\n");
   return stripHtmlTags(bodyHtml).trim();
+}
+
+function extractCoverFromFb2(xml: string): ExtractedCover | null {
+  try {
+    const coverId = findFb2CoverBinaryId(xml);
+    if (!coverId) return null;
+
+    const binary = extractFb2Binary(xml, coverId);
+    if (!binary) return null;
+
+    return validCoverOrNull({
+      bytes: decodeBase64ToBytes(binary.base64),
+      contentType: binary.contentType,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function uploadBookCover(
+  supabase: ReturnType<typeof createClient>,
+  bookId: string,
+  cover: ExtractedCover | null,
+): Promise<string | null> {
+  try {
+    const validCover = validCoverOrNull(cover);
+    if (!validCover) return null;
+
+    const ext = getCoverExtension(validCover.contentType);
+    const coverPath = `${bookId}/cover.${ext}`;
+    const { error } = await supabase.storage
+      .from("audio")
+      .upload(coverPath, validCover.bytes, {
+        contentType: validCover.contentType,
+        upsert: true,
+      });
+
+    if (error) {
+      console.warn("Cover upload skipped:", error);
+      return null;
+    }
+
+    return coverPath;
+  } catch (error) {
+    console.warn("Cover upload skipped:", error);
+    return null;
+  }
 }
 
 // ── DOC (OLE2) native text extraction ───────────────────────────
@@ -554,6 +694,7 @@ Deno.serve(async (req) => {
     // Extract text based on format
     let text: string;
     let meta: BookMetadata = {};
+    let cover: ExtractedCover | null = null;
 
     if (isPdf(bytes)) {
       // PDF: text-layer extraction first, AI fallback for scanned/low-text PDFs.
@@ -585,6 +726,7 @@ Deno.serve(async (req) => {
         const epub = extractTextFromEpub(rawBuffer);
         text = epub.text;
         meta = epub.meta;
+        cover = epub.cover;
       }
     } else if (isMobi(bytes) || ext === "mobi" || ext === "azw" || ext === "azw3") {
       // ── MOBI/AZW: native PalmDoc parser ──
@@ -600,6 +742,7 @@ Deno.serve(async (req) => {
       if (isFb2Xml(text)) {
         console.log("Detected FB2 format, extracting...");
         meta = parseFb2Metadata(text);
+        cover = extractCoverFromFb2(text);
         text = extractTextFromFb2(text);
       }
     }
@@ -649,6 +792,10 @@ Deno.serve(async (req) => {
     }
     if (metadataAuthor && !(book.author ?? "").trim()) {
       bookUpdate.author = metadataAuthor;
+    }
+    const coverPath = await uploadBookCover(supabase, bookId, cover);
+    if (coverPath) {
+      bookUpdate.cover_path = coverPath;
     }
     await supabase.from("books").update(bookUpdate).eq("id", bookId);
 

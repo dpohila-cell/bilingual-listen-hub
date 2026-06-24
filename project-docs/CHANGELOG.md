@@ -4,6 +4,14 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-24
 
+- **Book covers in Library (P4.2):** New EPUB and FB2 uploads can now extract a cover
+  image during `process-book`, upload it to the public `audio` bucket, store
+  `books.cover_path`, and render it in `BookCard`. Cover extraction/upload is strictly
+  best-effort: cover failures are skipped and never fail the book. Existing books without
+  `cover_path` keep the gradient placeholder, and deletion now explicitly removes the
+  root-level cover object. **Deploy pending:** migration not applied, `process-book` not
+  redeployed, frontend not rebuilt into `docs/`.
+
 - **Book metadata auto-fill (P4.1):** Upload now starts as soon as a file is selected,
   creating the book with a filename-derived title and blank author before `process-book`
   runs. EPUB, FB2, and DOCX uploads can now auto-fill embedded title/author metadata

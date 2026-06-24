@@ -242,13 +242,15 @@ blank. PDF/TXT/DOC/MOBI keep the filename title for now. Users can rename title/
 later from the library. **Deploy pending:** the changed `process-book` function has not
 yet been redeployed.
 
-### P4.2 — Cover image in Library · Planned
-Show the book's real cover in `BookCard` instead of the gradient. Extract the cover for
-EPUB (zip image referenced by OPF) and FB2 (embedded base64) first; store it in a public
-storage path and render with CSS `object-fit: cover` — **no server-side image resizing**
-(painful in Deno; unnecessary). PDF/DOC/TXT have no cover: keep the existing gradient +
-title/author fallback (already in `BookCard`). Adds a cover object to the delete-cleanup
-path. Do second.
+### P4.2 — Cover image in Library · Done (code) · deploy pending (2026-06-24)
+New EPUB and FB2 uploads now try to extract a cover image during `process-book`. EPUB uses
+the OPF cover manifest reference; FB2 uses `<coverpage>` plus embedded `<binary>` image
+data. Valid covers are capped at 5 MB, uploaded to the public `audio` bucket as
+`bookId/cover.<ext>`, and stored in `books.cover_path`. `BookCard` renders the cover with
+the existing fixed-size box and falls back to the gradient on missing/broken images.
+Deletion explicitly removes the root-level cover object. Cover work is best-effort and
+cannot fail book processing. **Deploy pending:** migration not applied, `process-book` not
+redeployed, frontend not rebuilt into `docs/`.
 
 ### P4.3 — Sections / chapter navigation · Planned
 Goal: jump between sections. The player engine already supports jump-to-position (windowed

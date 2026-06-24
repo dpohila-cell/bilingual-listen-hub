@@ -15,7 +15,7 @@ rules live in `PRODUCT_BEHAVIOR.md`.
 
 - `profiles` — one row per user, auto-created on signup.
 - `books` — `id`, `user_id`, `title`, `author`, `original_language`, `file_path`,
-  `status` (`processing` | `ready` | `error`), `sentence_count`.
+  optional `cover_path`, `status` (`processing` | `ready` | `error`), `sentence_count`.
 - `sentences` — `book_id`, `sentence_order`, `original_text`, and `en_translation`,
   `ru_translation`, `sv_translation` (nullable until translated).
 - `user_progress` — last read position per (user, book).
@@ -30,15 +30,16 @@ RLS: users can only read/write their own books, their own books' sentences (via
   The real key is stored in `books.file_path`.
 - `audio` bucket (**public**) — generated MP3s at
   `bookId/<language>/<safeVoiceName>/<00001>.mp3`. The voice name is sanitized
-  (non-alphanumeric → `_`). The player builds these public URLs directly.
+  (non-alphanumeric → `_`). EPUB/FB2 covers are stored at `bookId/cover.<ext>` when
+  extraction succeeds. The player and library build these public URLs directly.
 
 ## Edge functions (`supabase/functions/`)
 
 - `process-book` — reads the uploaded file, extracts text per format (PDF via OpenAI;
   EPUB/DOCX via ZIP parsing; MOBI/AZW via PalmDoc; DOC via OLE2; FB2/TXT natively),
-  extracts best-effort title/author metadata for EPUB, FB2, and DOCX, detects language
-  (by script first, OpenAI fallback), splits into sentences, stores them, and translates
-  the first batch.
+  extracts best-effort title/author metadata for EPUB, FB2, and DOCX, extracts a
+  best-effort cover for EPUB and FB2, detects language (by script first, OpenAI fallback),
+  splits into sentences, stores them, and translates the first batch.
 - `translate-batch` — translates one range of sentences on demand (used by the player).
   This is the only translation path; the whole-book `translate-all` background job was
   removed (windowed model — see `PRODUCT_BEHAVIOR.md`). `process-book` still translates

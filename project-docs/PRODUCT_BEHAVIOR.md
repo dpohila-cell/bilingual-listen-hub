@@ -31,6 +31,9 @@ bilingually (original language + one target language) with generated speech.
   container formats may auto-fill metadata from the file (EPUB OPF, FB2 `title-info`,
   DOCX core properties). Unsupported formats keep the filename title. Users can rename
   the title and author later from the library.
+- New EPUB and FB2 uploads may also extract a cover image for the library card. Cover
+  extraction is best-effort only: if the image is missing, malformed, too large, or fails
+  to upload, the book still processes normally and keeps the existing gradient placeholder.
 - Extracted text is sanitized before it is stored as `sentences.original_text` (the text
   the TTS reads verbatim). Hidden/invisible characters that would make speech synthesis
   mispronounce or stall — control characters, zero-width and bidi marks, soft hyphens,
@@ -88,4 +91,5 @@ Agreed rules:
   `generate-audio` returns a real error (`502` with Google's message) and the player shows
   it — it must not stop silently.
 - Deleting a book must remove its sentences, progress, the source file (`books.file_path`),
+  the optional cover image (`books.cover_path`),
   and all generated audio under `bookId/` — leaving no paid storage behind.

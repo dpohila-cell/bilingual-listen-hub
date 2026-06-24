@@ -49,6 +49,7 @@ export interface Book {
   fileFormat: string;
   filePath?: string | null;
   status?: string;
+  coverPath?: string | null;
   coverUrl?: string;
   chapterCount: number;
   sentenceCount: number;

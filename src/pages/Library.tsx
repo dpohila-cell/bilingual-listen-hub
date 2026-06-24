@@ -48,18 +48,27 @@ export default function Library() {
         .in('status', ['ready', 'processing', 'error'])
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map((b): Book => ({
-        id: b.id,
-        title: b.title,
-        author: b.author || '',
-        originalLanguage: (b.original_language as Book['originalLanguage']) || 'en',
-        fileFormat: 'txt',
-        filePath: b.file_path,
-        status: b.status,
-        chapterCount: 1,
-        sentenceCount: b.sentence_count,
-        createdAt: b.created_at,
-      }));
+      return (data || []).map((b): Book => {
+        const coverPath = b.cover_path || null;
+        const coverUrl = coverPath
+          ? supabase.storage.from('audio').getPublicUrl(coverPath).data.publicUrl
+          : undefined;
+
+        return {
+          id: b.id,
+          title: b.title,
+          author: b.author || '',
+          originalLanguage: (b.original_language as Book['originalLanguage']) || 'en',
+          fileFormat: 'txt',
+          filePath: b.file_path,
+          status: b.status,
+          coverPath,
+          coverUrl,
+          chapterCount: 1,
+          sentenceCount: b.sentence_count,
+          createdAt: b.created_at,
+        };
+      });
     },
     enabled: !!user,
   });
@@ -152,6 +161,11 @@ export default function Library() {
       // Delete ebook file from storage
       if (book?.filePath) {
         await supabase.storage.from('ebooks').remove([book.filePath]);
+      }
+
+      // Delete root-level cover image, which is not included in the audio folder walk.
+      if (book?.coverPath) {
+        await supabase.storage.from('audio').remove([book.coverPath]);
       }
 
       // Delete progress, sentences, then book (order matters for FK)
