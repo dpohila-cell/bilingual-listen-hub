@@ -99,7 +99,7 @@ stuck row was set to `error`. **Affected:** `supabase/functions/process-book/ind
 `supabase/functions/_shared/openai.ts`, `supabase/functions/_shared/fileDataUrl.ts`,
 `src/test/openai.test.ts`.
 
-### P1.6 — Robust large-PDF extraction · Planned (HIGH — reproduced 2026-06-24)
+### P1.6 — Robust large-PDF extraction · Done (code) · deploy pending (2026-06-24)
 **Reproduced live:** a real PDF extracted only ~26 pages and playback stopped near
 page 24 because no sentences exist past the truncation point. **Root cause:** the whole
 PDF is sent in one AI call asking for the whole book in one response, but
@@ -110,9 +110,12 @@ fits in one response.
 Also still open from before: inline base64 in the Responses API is capped (~33.5M chars ≈
 ~24 MB) while uploads allow up to 25 MB, and the in-function base64 conversion
 (`Array.from(bytes).map(...).join('')`) is memory-heavy.
-**Real fix direction:** extract the PDF in page ranges across multiple AI calls and
-concatenate, OR extract the PDF text layer with a real parser (pdf.js / unpdf) and reserve
-AI only for scanned/image PDFs. Until then long PDFs are unusable past ~26 pages.
+**Fixed in code:** PDF processing now tries `unpdf` text-layer extraction first and uses
+the parsed text only when enough pages contain meaningful text and the total extracted
+letters are sufficient. The `unpdf` import is dynamic and wrapped in `try/catch`, so
+import-time or parser failures return `null` and degrade to the unchanged OpenAI
+extraction path. AI remains the fallback for scanned/image PDFs and weak text layers.
+**Deploy pending:** `process-book` has not yet been redeployed.
 
 ### P1.7 — Sanitize extracted text before storage · Done (code) · deploy pending (2026-06-24)
 Hidden/invisible characters leaked from extraction into `sentences.original_text` (the

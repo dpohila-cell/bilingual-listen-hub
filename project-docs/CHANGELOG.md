@@ -4,6 +4,13 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-24
 
+- **Robust large-PDF extraction (P1.6):** PDF processing now tries a real text-layer
+  parser before OpenAI, avoiding the one-response AI output cap that truncated long PDFs
+  after roughly 25-30 pages. The parser is dynamically imported inside a guarded function:
+  any import/runtime/parser failure returns `null`, and scanned or low-text PDFs fall back
+  to the existing AI extraction path unchanged. Added unit coverage for the pure usability
+  decision helper. **Deploy pending:** `process-book` has not yet been redeployed.
+
 - **Clean text before audio (P1.7):** The text extracted from an uploaded book is now
   cleaned before it is saved, so the spoken audio no longer reads invisible junk. Hidden
   characters that don't show on screen but confuse text-to-speech — control characters,

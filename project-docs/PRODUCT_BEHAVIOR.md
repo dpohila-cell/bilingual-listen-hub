@@ -20,8 +20,9 @@ bilingually (original language + one target language) with generated speech.
 ## Upload
 
 - Accepted formats (single source of truth = `ACCEPTED_FORMATS` in `src/lib/uploadValidation.ts`):
-  EPUB, FB2, TXT, DOC, DOCX, PDF, MOBI, AZW, AZW3. PDF is extracted with OpenAI; the rest
-  with built-in parsers.
+  EPUB, FB2, TXT, DOC, DOCX, PDF, MOBI, AZW, AZW3. PDF is extracted from its text layer
+  first, with OpenAI kept as the fallback for scanned PDFs, low-text PDFs, or parser
+  failures; the rest use built-in parsers.
 - A book becomes `ready` only when it is genuinely processed. A book that is still
   `processing` (or failed) must not be presented or opened as if ready.
 - Extracted text is sanitized before it is stored as `sentences.original_text` (the text

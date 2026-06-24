@@ -5,6 +5,7 @@ import {
   generateText,
   getOpenAIApiKey,
 } from "../_shared/openai.ts";
+import { extractPdfText, isExtractionUsable } from "../_shared/pdfText.ts";
 import { sanitizeExtractedText, splitIntoSentences } from "../_shared/text.ts";
 import { translateTexts } from "../_shared/translation.ts";
 
@@ -546,9 +547,15 @@ Deno.serve(async (req) => {
     let text: string;
 
     if (isPdf(bytes)) {
-      // ── PDF: AI-based extraction ──
-      console.log("Detected PDF format, extracting via AI...");
-      text = await extractTextFromPdfWithAI(bytes, openAIApiKey);
+      // PDF: text-layer extraction first, AI fallback for scanned/low-text PDFs.
+      const parsed = await extractPdfText(bytes);
+      if (parsed && isExtractionUsable(parsed)) {
+        console.log(`PDF: text-layer extraction, ${parsed.totalPages} pages`);
+        text = parsed.text;
+      } else {
+        console.log("PDF: falling back to AI extraction (scanned or low text layer)");
+        text = await extractTextFromPdfWithAI(bytes, openAIApiKey);
+      }
     } else if (isZip(bytes)) {
       // ZIP-based formats: EPUB, DOCX, or FB2 inside ZIP
       const files = unzipSync(bytes);
