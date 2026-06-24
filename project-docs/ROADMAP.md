@@ -99,14 +99,20 @@ stuck row was set to `error`. **Affected:** `supabase/functions/process-book/ind
 `supabase/functions/_shared/openai.ts`, `supabase/functions/_shared/fileDataUrl.ts`,
 `src/test/openai.test.ts`.
 
-### P1.6 — Robust large-PDF extraction · Planned
-The PDF path now works but is not robust for big files. Inline base64 in the
-OpenAI Responses API is capped (~33.5M chars ≈ ~24 MB) while uploads are allowed
-up to 25 MB, so a large PDF can still fail; the in-function base64 conversion
-(`Array.from(bytes).map(...).join('')`) is memory-heavy; and a long PDF asked for
-in one response can be truncated. With P1.5 these now fail honestly (book marked
-`error`) rather than hanging. Options: lower the PDF size cap, switch to a
-streaming/chunked base64 encoder, or use the OpenAI Files API for large PDFs.
+### P1.6 — Robust large-PDF extraction · Planned (HIGH — reproduced 2026-06-24)
+**Reproduced live:** a real PDF extracted only ~26 pages and playback stopped near
+page 24 because no sentences exist past the truncation point. **Root cause:** the whole
+PDF is sent in one AI call asking for the whole book in one response, but
+`extractTextWithAI` → `generateFromPdf` passes no `max_output_tokens`, so it hits the
+model's output cap (gpt-4o-mini ≈ 16k tokens ≈ ~25–30 pages). The book's tail is silently
+dropped. Raising the cap does not scale — 16k is the hard ceiling, so a whole book never
+fits in one response.
+Also still open from before: inline base64 in the Responses API is capped (~33.5M chars ≈
+~24 MB) while uploads allow up to 25 MB, and the in-function base64 conversion
+(`Array.from(bytes).map(...).join('')`) is memory-heavy.
+**Real fix direction:** extract the PDF in page ranges across multiple AI calls and
+concatenate, OR extract the PDF text layer with a real parser (pdf.js / unpdf) and reserve
+AI only for scanned/image PDFs. Until then long PDFs are unusable past ~26 pages.
 
 ### P1.7 — Sanitize extracted text before storage · Done (code) · deploy pending (2026-06-24)
 Hidden/invisible characters leaked from extraction into `sentences.original_text` (the
@@ -124,6 +130,31 @@ text with injected hidden characters. `npx tsc --noEmit -p tsconfig.app.json` cl
 `supabase/functions/process-book/index.ts`, `src/test/text.test.ts`.
 **Deploy pending:** `process-book` redeploy to Supabase was blocked by the environment
 pending explicit user authorization — not yet live in production.
+
+### P1.8 — Russian TTS quality · Planned (reported 2026-06-24)
+Russian audio is poor — commas ignored, words run together — while English from the same
+pipeline reads fine. The text is sent as plain text (no SSML) with the Chirp3-HD Russian
+voice; Chirp3-HD is the newest "smart" voice family but does **not** support SSML and is
+markedly weaker on Russian prosody than on English. Because the same punctuation reads
+correctly in English, the cause is the voice, not our text.
+**Fix direction (cheapest first, before any paid vendor):** switch the Russian voice to a
+Google Wavenet (or Standard) tier, which supports SSML, and add explicit `<break>` pauses
+at commas/periods. This is a `VOICE_OPTIONS` / `generate-audio` `DEFAULT_VOICES` change and
+is auditable by ear. Note: this revisits the locked Chirp3-HD decision for Russian, so it
+is a deliberate product change. A paid aggregator (ElevenLabs/Azure) is a later fallback
+only if Wavenet+SSML is still unsatisfactory. Quick sanity check: confirm the stored
+Russian translation actually keeps spaces/punctuation (likely fine, since English is fine).
+
+### P1.9 — Clipped phrase starts · Planned (reported 2026-06-24)
+The beginning of almost every phrase is swallowed. Two compounding causes: (1) **Bluetooth
+A2DP idle wake-up** — headphones power down the link during the inter-sentence pauses and
+clip ~0.1–0.3 s when the next clip starts (real, known behavior); (2) **the player starts
+playback before buffering** — `playAudioElement` sets `audio.src` and calls `audio.play()`
+immediately, without waiting for `canplay`/`canplaythrough`, so the first frames can drop.
+**Fix direction:** add a short leading silence (~250–400 ms) to each clip (e.g. a leading
+SSML `<break>` on a Wavenet voice — ties into P1.8), and/or keep the audio link warm with a
+silent keep-alive loop so Bluetooth never idles between sentences; also wait for `canplay`
+before `play()`.
 
 ---
 
@@ -187,6 +218,52 @@ Broader upload/deletion/player integration tests remain future work.
 Enabled TypeScript `strict` for the app config and removed the `noImplicitAny: false`
 override. This was nearly free because the codebase was already strict-clean; only the
 test `matchMedia` mock needed an explicit `onchange` type.
+
+---
+
+## P4 — Content enrichment (new features, agreed 2026-06-24)
+
+Shared root: container formats (EPUB, FB2; partly DOCX, MOBI) already carry title, author,
+cover image, and chapter boundaries, and `process-book` already opens these containers.
+PDF/TXT/DOC carry little or none of this, so every item below degrades by format and is
+weakest for PDF. **Scope decision: new uploads only** — already-uploaded books are not
+backfilled unless re-uploaded. Best done as one parsing enrichment that feeds all three,
+not three separate passes.
+
+### P4.1 — Auto-fill title & author from the book · Planned
+Today title defaults to the filename and author is blank/user-entered (`UploadPage.tsx`).
+Read real metadata at parse time: EPUB OPF `<dc:title>`/`<dc:creator>` (already parsed for
+the spine), FB2 `<book-title>`/`<author>`, DOCX `docProps/core.xml`, MOBI EXTH. For PDF,
+optionally ask the same extraction AI for title/author from the title page (best-effort).
+Fallback to the filename as now. Cheapest, highest-value of the three — do first.
+
+### P4.2 — Cover image in Library · Planned
+Show the book's real cover in `BookCard` instead of the gradient. Extract the cover for
+EPUB (zip image referenced by OPF) and FB2 (embedded base64) first; store it in a public
+storage path and render with CSS `object-fit: cover` — **no server-side image resizing**
+(painful in Deno; unnecessary). PDF/DOC/TXT have no cover: keep the existing gradient +
+title/author fallback (already in `BookCard`). Adds a cover object to the delete-cleanup
+path. Do second.
+
+### P4.3 — Sections / chapter navigation · Planned
+Goal: jump between sections. The player engine already supports jump-to-position (windowed
+prepare), so a chapter jump = seek to its first `sentence_order`. **Agreed design (kept
+deliberately simple):**
+- **Structure from the file when present:** EPUB spine items and FB2 `<section>` give real,
+  stable chapter boundaries (filter out empty/very short front-matter sections).
+- **Structureless formats (TXT, and PDF/DOC text after extraction):** a cheap deterministic
+  heading regex (e.g. `^(chapter|глава|kapitel)\s+\w+`, short all-caps lines). No AI — avoids
+  hallucinated, non-deterministic chapters and avoids enlarging the fragile PDF extraction.
+- **AI-inferred chapters: deferred.** Rejected for the default path because (a) it mixes
+  guesses with file-truth, (b) the real cost is re-aligning AI output to our own sentence
+  numbering, and (c) adding structure to the same PDF response worsens the P1.6 truncation
+  risk. Only revisit later as a separate, optional pass using inline chapter markers, never
+  coupled to the critical extraction call.
+- **UI: a flat "Contents" drawer/sheet** (tap a chapter → jump), **not** a left
+  Explorer-style folder tree — the tree is a desktop metaphor that clashes with this
+  mobile-first app and over-models what is usually a flat chapter list.
+Needs a data-model addition (a chapter index/title on sentences, or a chapters table). Do
+last of the three.
 
 ---
 
