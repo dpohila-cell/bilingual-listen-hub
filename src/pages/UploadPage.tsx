@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,7 +10,7 @@ import { toast } from 'sonner';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import type { Language } from '@/types';
 
-type UploadStep = 'select' | 'details' | 'processing' | 'done';
+type UploadStep = 'select' | 'processing' | 'done';
 
 const PROCESSING_STEPS = [
   'Uploading file…',
@@ -24,9 +23,6 @@ const PROCESSING_STEPS = [
 export default function UploadPage() {
   const [step, setStep] = useState<UploadStep>('select');
   const [currentProcess, setCurrentProcess] = useState(0);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [title, setTitle] = useState('');
-  const [author, setAuthor] = useState('');
   const [newBookId, setNewBookId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -61,13 +57,16 @@ export default function UploadPage() {
   };
 
   const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-    setTitle(file.name.replace(/\.[^/.]+$/, ''));
-    setStep('details');
+    void handleUpload(file);
   };
 
-  const handleUpload = async () => {
-    if (!selectedFile || !user) return;
+  const getTitleFromFileName = (file: File) => {
+    const withoutExtension = file.name.replace(/\.[^/.]+$/, '').trim();
+    return withoutExtension || file.name.trim() || 'Untitled';
+  };
+
+  const handleUpload = async (file: File) => {
+    if (!user) return;
 
     setStep('processing');
     setCurrentProcess(0);
@@ -75,9 +74,9 @@ export default function UploadPage() {
     try {
       // 1. Upload file to storage as binary (preserve encoding)
       // Sanitize filename: replace non-ASCII and special chars with underscores
-      const safeFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const filePath = `${user.id}/${Date.now()}-${safeFileName}`;
-      const fileBuffer = await selectedFile.arrayBuffer();
+      const fileBuffer = await file.arrayBuffer();
       const { error: uploadError } = await supabase.storage
         .from('ebooks')
         .upload(filePath, fileBuffer, {
@@ -92,8 +91,8 @@ export default function UploadPage() {
         .from('books')
         .insert({
           user_id: user.id,
-          title: title || 'Untitled',
-          author: author || '',
+          title: getTitleFromFileName(file),
+          author: '',
           file_path: filePath,
           original_language: 'en', // will be auto-detected by edge function
           status: 'processing',
@@ -172,39 +171,6 @@ export default function UploadPage() {
           </motion.div>
         )}
 
-        {step === 'details' && (
-          <motion.div
-            key="details"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-col gap-4 rounded-2xl bg-card border border-border p-6"
-          >
-            <h2 className="font-serif text-lg">Book Details</h2>
-            <Input
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <Input
-              placeholder="Author (optional)"
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              File: {selectedFile?.name} ({((selectedFile?.size || 0) / 1024 / 1024).toFixed(1)} MB)
-            </p>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => { setStep('select'); setSelectedFile(null); }}>
-                Back
-              </Button>
-              <Button className="flex-1" onClick={handleUpload}>
-                Start Processing
-              </Button>
-            </div>
-          </motion.div>
-        )}
-
         {step === 'processing' && (
           <motion.div
             key="processing"
@@ -260,7 +226,7 @@ export default function UploadPage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => { setStep('select'); setSelectedFile(null); }}
+                onClick={() => setStep('select')}
               >
                 Upload Another
               </Button>

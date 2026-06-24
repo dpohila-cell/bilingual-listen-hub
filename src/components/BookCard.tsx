@@ -1,5 +1,5 @@
 import { Book, LANGUAGE_LABELS, UserProgress } from '@/types';
-import { BookOpen, Headphones, Trash2 } from 'lucide-react';
+import { BookOpen, Headphones, Pencil, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 
@@ -7,6 +7,7 @@ interface BookCardProps {
   book: Book;
   progress?: UserProgress;
   onClick: (bookId: string) => void;
+  onEdit?: (bookId: string) => void;
   onDelete?: (bookId: string) => void;
 }
 
@@ -16,7 +17,7 @@ const COVER_COLORS = [
   'from-success/80 to-success',
 ];
 
-export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
+export function BookCard({ book, progress, onClick, onEdit, onDelete }: BookCardProps) {
   const totalSentences = progress?.totalSentences ?? 0;
   const progressPercent = totalSentences > 0
     ? Math.min(100, Math.max(0, Math.round((progress!.completedSentences / totalSentences) * 100)))
@@ -70,6 +71,18 @@ export function BookCard({ book, progress, onClick, onDelete }: BookCardProps) {
           <Badge variant={book.status === 'error' ? 'destructive' : 'secondary'}>
             {statusLabel}
           </Badge>
+        )}
+        {onEdit && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(book.id);
+            }}
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Edit book"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
         )}
         {onDelete && (
           <button

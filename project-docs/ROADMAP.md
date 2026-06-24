@@ -232,12 +232,15 @@ weakest for PDF. **Scope decision: new uploads only** — already-uploaded books
 backfilled unless re-uploaded. Best done as one parsing enrichment that feeds all three,
 not three separate passes.
 
-### P4.1 — Auto-fill title & author from the book · Planned
-Today title defaults to the filename and author is blank/user-entered (`UploadPage.tsx`).
-Read real metadata at parse time: EPUB OPF `<dc:title>`/`<dc:creator>` (already parsed for
-the spine), FB2 `<book-title>`/`<author>`, DOCX `docProps/core.xml`, MOBI EXTH. For PDF,
-optionally ask the same extraction AI for title/author from the title page (best-effort).
-Fallback to the filename as now. Cheapest, highest-value of the three — do first.
+### P4.1 — Auto-fill title & author from the book · Done (code) · deploy pending (2026-06-24)
+Upload now starts immediately after file selection: the book row is created up front with
+a non-empty filename-derived title, blank author, and `status=processing`. During
+`process-book`, EPUB OPF, FB2 `title-info`, and DOCX `docProps/core.xml` metadata are
+parsed with a pure tested helper and used to update the book. Metadata title replaces the
+filename title when present; metadata author is only written if the current author is
+blank. PDF/TXT/DOC/MOBI keep the filename title for now. Users can rename title/author
+later from the library. **Deploy pending:** the changed `process-book` function has not
+yet been redeployed.
 
 ### P4.2 — Cover image in Library · Planned
 Show the book's real cover in `BookCard` instead of the gradient. Extract the cover for

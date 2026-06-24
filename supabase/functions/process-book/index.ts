@@ -6,6 +6,12 @@ import {
   getOpenAIApiKey,
 } from "../_shared/openai.ts";
 import { extractPdfText, isExtractionUsable } from "../_shared/pdfText.ts";
+import {
+  parseDocxCoreMetadata,
+  parseFb2Metadata,
+  parseOpfMetadata,
+  type BookMetadata,
+} from "../_shared/metadata.ts";
 import { sanitizeExtractedText, splitIntoSentences } from "../_shared/text.ts";
 import { translateTexts } from "../_shared/translation.ts";
 
@@ -246,9 +252,10 @@ function extractTextFromMobi(bytes: Uint8Array): string {
 
 // ── EPUB extraction ─────────────────────────────────────────────
 
-function extractTextFromEpub(buffer: ArrayBuffer): string {
+function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMetadata } {
   const bytes = new Uint8Array(buffer);
   const files = unzipSync(bytes);
+  let meta: BookMetadata = {};
 
   let opfPath = "";
   const containerPath = Object.keys(files).find((f) =>
@@ -266,6 +273,7 @@ function extractTextFromEpub(buffer: ArrayBuffer): string {
 
   if (opfPath && files[opfPath]) {
     const opfXml = new TextDecoder("utf-8").decode(files[opfPath]);
+    meta = parseOpfMetadata(opfXml);
     const manifest: Record<string, string> = {};
     const itemRegex = /<item\s+[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*/gi;
     let m;
@@ -297,7 +305,7 @@ function extractTextFromEpub(buffer: ArrayBuffer): string {
     if (text.length > 0) textParts.push(text);
   }
 
-  return textParts.join("\n\n");
+  return { text: textParts.join("\n\n"), meta };
 }
 
 // ── DOCX extraction ─────────────────────────────────────────────
@@ -505,7 +513,7 @@ Deno.serve(async (req) => {
     // Validate book ownership
     const { data: book, error: bookError } = await supabase
       .from("books")
-      .select("id, user_id, file_path")
+      .select("id, user_id, file_path, author")
       .eq("id", bookId)
       .single();
 
@@ -545,6 +553,7 @@ Deno.serve(async (req) => {
 
     // Extract text based on format
     let text: string;
+    let meta: BookMetadata = {};
 
     if (isPdf(bytes)) {
       // PDF: text-layer extraction first, AI fallback for scanned/low-text PDFs.
@@ -562,11 +571,20 @@ Deno.serve(async (req) => {
 
       if (isDocx(files)) {
         console.log("Detected DOCX format, extracting...");
+        const corePath = Object.keys(files).find(
+          (f) => f.toLowerCase() === "docprops/core.xml"
+        );
+        if (corePath && files[corePath]) {
+          const coreXml = new TextDecoder("utf-8").decode(files[corePath]);
+          meta = parseDocxCoreMetadata(coreXml);
+        }
         text = extractTextFromDocx(rawBuffer);
       } else {
         // Assume EPUB
         console.log("Detected EPUB format, extracting...");
-        text = extractTextFromEpub(rawBuffer);
+        const epub = extractTextFromEpub(rawBuffer);
+        text = epub.text;
+        meta = epub.meta;
       }
     } else if (isMobi(bytes) || ext === "mobi" || ext === "azw" || ext === "azw3") {
       // ── MOBI/AZW: native PalmDoc parser ──
@@ -581,6 +599,7 @@ Deno.serve(async (req) => {
       text = decodeText(rawBuffer);
       if (isFb2Xml(text)) {
         console.log("Detected FB2 format, extracting...");
+        meta = parseFb2Metadata(text);
         text = extractTextFromFb2(text);
       }
     }
@@ -621,8 +640,17 @@ Deno.serve(async (req) => {
     }
     console.log(`Detected language: ${detectedLanguage} (${scriptDetectedLanguage ? "script" : "ai"})`);
 
-    // Update book with detected language
-    await supabase.from("books").update({ original_language: detectedLanguage }).eq("id", bookId);
+    // Update book with detected language and best-effort file metadata.
+    const bookUpdate: Record<string, string> = { original_language: detectedLanguage };
+    const metadataTitle = meta.title?.trim();
+    const metadataAuthor = meta.author?.trim();
+    if (metadataTitle) {
+      bookUpdate.title = metadataTitle;
+    }
+    if (metadataAuthor && !(book.author ?? "").trim()) {
+      bookUpdate.author = metadataAuthor;
+    }
+    await supabase.from("books").update(bookUpdate).eq("id", bookId);
 
     // Delete any existing sentences for this book (in case of retry)
     await supabase.from("sentences").delete().eq("book_id", bookId);

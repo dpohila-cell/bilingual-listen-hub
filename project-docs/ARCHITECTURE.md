@@ -36,8 +36,9 @@ RLS: users can only read/write their own books, their own books' sentences (via
 
 - `process-book` — reads the uploaded file, extracts text per format (PDF via OpenAI;
   EPUB/DOCX via ZIP parsing; MOBI/AZW via PalmDoc; DOC via OLE2; FB2/TXT natively),
-  detects language (by script first, OpenAI fallback), splits into sentences, stores them,
-  and translates the first batch.
+  extracts best-effort title/author metadata for EPUB, FB2, and DOCX, detects language
+  (by script first, OpenAI fallback), splits into sentences, stores them, and translates
+  the first batch.
 - `translate-batch` — translates one range of sentences on demand (used by the player).
   This is the only translation path; the whole-book `translate-all` background job was
   removed (windowed model — see `PRODUCT_BEHAVIOR.md`). `process-book` still translates
@@ -52,9 +53,10 @@ All functions use `verify_jwt=false` at the platform and validate the user thems
 ## Request flow
 
 ### Upload (`UploadPage` → `process-book`)
-1. File uploaded to the `ebooks` bucket; a `books` row is created with `status=processing`.
-2. `process-book` extracts text, detects language, stores sentences, translates the first
-   batch.
+1. File uploaded to the `ebooks` bucket; a `books` row is created with `status=processing`,
+   a filename-derived title, and a blank author.
+2. `process-book` extracts text, auto-fills supported file metadata, detects language,
+   stores sentences, translates the first batch.
 3. The client reads the book's stored `status` (set by `process-book`): `ready` → generate
    the first audio batch and open the player; `error` → show a failure message; still
    `processing` → send the user to the library where it shows a processing badge.

@@ -7,6 +7,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +19,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { Book, UserProgress } from '@/types';
 
 export default function Library() {
@@ -25,6 +34,10 @@ export default function Library() {
   const queryClient = useQueryClient();
   const [deleteBookId, setDeleteBookId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [renameBookId, setRenameBookId] = useState<string | null>(null);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [renameAuthor, setRenameAuthor] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const { data: books = [], isLoading: booksLoading } = useQuery({
     queryKey: ['books', user?.id],
@@ -85,6 +98,20 @@ export default function Library() {
 
   const deleteBookName = books.find((b) => b.id === deleteBookId)?.title || '';
 
+  const openRenameDialog = (bookId: string) => {
+    const book = books.find((b) => b.id === bookId);
+    if (!book) return;
+    setRenameBookId(book.id);
+    setRenameTitle(book.title);
+    setRenameAuthor(book.author || '');
+  };
+
+  const closeRenameDialog = () => {
+    setRenameBookId(null);
+    setRenameTitle('');
+    setRenameAuthor('');
+  };
+
   const handleBookClick = (bookId: string) => {
     const book = books.find((b) => b.id === bookId);
     if (book?.status === 'ready') {
@@ -144,6 +171,34 @@ export default function Library() {
     }
   };
 
+  const handleRenameSave = async () => {
+    if (!renameBookId) return;
+
+    const nextTitle = renameTitle.trim() || 'Untitled';
+    const nextAuthor = renameAuthor.trim();
+
+    setIsRenaming(true);
+    try {
+      const { error } = await supabase
+        .from('books')
+        .update({ title: nextTitle, author: nextAuthor })
+        .eq('id', renameBookId);
+      if (error) throw error;
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['books'] }),
+        queryClient.invalidateQueries({ queryKey: ['book'] }),
+      ]);
+      closeRenameDialog();
+      toast.success('Book updated');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error('Failed to update book: ' + message);
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
   if (booksLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -178,6 +233,7 @@ export default function Library() {
             book={continueBook}
             progress={getProgress(continueBook.id)}
             onClick={handleBookClick}
+            onEdit={openRenameDialog}
             onDelete={setDeleteBookId}
           />
         </section>
@@ -200,12 +256,48 @@ export default function Library() {
                 book={book}
                 progress={getProgress(book.id)}
                 onClick={handleBookClick}
+                onEdit={openRenameDialog}
                 onDelete={setDeleteBookId}
               />
             ))}
           </div>
         )}
       </section>
+
+      <Dialog open={!!renameBookId} onOpenChange={(open) => !open && closeRenameDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename book</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Title
+              <Input
+                value={renameTitle}
+                onChange={(e) => setRenameTitle(e.target.value)}
+                disabled={isRenaming}
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Author
+              <Input
+                value={renameAuthor}
+                onChange={(e) => setRenameAuthor(e.target.value)}
+                disabled={isRenaming}
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeRenameDialog} disabled={isRenaming}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameSave} disabled={isRenaming}>
+              {isRenaming ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteBookId} onOpenChange={(open) => !open && setDeleteBookId(null)}>
         <AlertDialogContent>

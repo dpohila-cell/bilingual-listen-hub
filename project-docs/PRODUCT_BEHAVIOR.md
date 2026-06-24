@@ -26,6 +26,11 @@ bilingually (original language + one target language) with generated speech.
   failures; the rest use built-in parsers.
 - A book becomes `ready` only when it is genuinely processed. A book that is still
   `processing` (or failed) must not be presented or opened as if ready.
+- Upload starts immediately after file selection. The initial `books.title` is derived
+  from the filename and `books.author` starts blank; during processing, supported
+  container formats may auto-fill metadata from the file (EPUB OPF, FB2 `title-info`,
+  DOCX core properties). Unsupported formats keep the filename title. Users can rename
+  the title and author later from the library.
 - Extracted text is sanitized before it is stored as `sentences.original_text` (the text
   the TTS reads verbatim). Hidden/invisible characters that would make speech synthesis
   mispronounce or stall — control characters, zero-width and bidi marks, soft hyphens,

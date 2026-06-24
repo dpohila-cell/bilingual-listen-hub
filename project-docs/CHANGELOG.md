@@ -4,6 +4,13 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-24
 
+- **Book metadata auto-fill (P4.1):** Upload now starts as soon as a file is selected,
+  creating the book with a filename-derived title and blank author before `process-book`
+  runs. EPUB, FB2, and DOCX uploads can now auto-fill embedded title/author metadata
+  during processing; author is only auto-filled when the current author is blank. The
+  library now has a rename dialog for correcting title and author later. PDF/TXT/DOC/MOBI
+  keep the filename title. **Deploy pending:** `process-book` has not yet been redeployed.
+
 - **Russian audio quality + clipped-start guard (P1.8/P1.9):** Russian TTS now uses
   Google Wavenet voices with SSML and a 300 ms leading break, while English and Swedish
   remain on Chirp3-HD plain text input. Old stored Russian Chirp voice IDs fall back to
