@@ -99,7 +99,7 @@ stuck row was set to `error`. **Affected:** `supabase/functions/process-book/ind
 `supabase/functions/_shared/openai.ts`, `supabase/functions/_shared/fileDataUrl.ts`,
 `src/test/openai.test.ts`.
 
-### P1.6 — Robust large-PDF extraction · Done (code) · deploy pending (2026-06-24)
+### P1.6 — Robust large-PDF extraction · Done (2026-06-24; deployed 2026-06-25)
 **Reproduced live:** a real PDF extracted only ~26 pages and playback stopped near
 page 24 because no sentences exist past the truncation point. **Root cause:** the whole
 PDF is sent in one AI call asking for the whole book in one response, but
@@ -115,9 +115,9 @@ the parsed text only when enough pages contain meaningful text and the total ext
 letters are sufficient. The `unpdf` import is dynamic and wrapped in `try/catch`, so
 import-time or parser failures return `null` and degrade to the unchanged OpenAI
 extraction path. AI remains the fallback for scanned/image PDFs and weak text layers.
-**Deploy pending:** `process-book` has not yet been redeployed.
+**Deployed 2026-06-25:** `process-book` redeployed (v13+); text-layer PDF live.
 
-### P1.7 — Sanitize extracted text before storage · Done (code) · deploy pending (2026-06-24)
+### P1.7 — Sanitize extracted text before storage · Done (2026-06-24; deployed 2026-06-25)
 Hidden/invisible characters leaked from extraction into `sentences.original_text` (the
 text TTS reads verbatim) — control chars, zero-width and bidi marks, soft hyphens, BOM,
 non-standard spaces — making audio speak garbage. Only `stripNullBytes` ran globally;
@@ -131,10 +131,9 @@ so sentence splitting is unchanged. Covered by a Vitest unit test using public-d
 text with injected hidden characters. `npx tsc --noEmit -p tsconfig.app.json` clean,
 `npm test` 20/20. **Affected:** `supabase/functions/_shared/text.ts`,
 `supabase/functions/process-book/index.ts`, `src/test/text.test.ts`.
-**Deploy pending:** `process-book` redeploy to Supabase was blocked by the environment
-pending explicit user authorization — not yet live in production.
+**Deployed 2026-06-25:** `process-book` redeployed; the sanitizer is live in production.
 
-### P1.8 — Russian TTS quality · Done (code) · deploy pending (2026-06-24)
+### P1.8 — Russian TTS quality · Done (2026-06-24; deployed 2026-06-25)
 Russian audio is poor — commas ignored, words run together — while English from the same
 pipeline reads fine. The text is sent as plain text (no SSML) with the Chirp3-HD Russian
 voice; Chirp3-HD is the newest "smart" voice family but does **not** support SSML and is
@@ -144,10 +143,10 @@ correctly in English, the cause is the voice, not our text.
 `generate-audio` defaults to `ru-RU-Wavenet-D`. A shared TTS helper sends Chirp voices as
 plain `{ text }` and non-Chirp voices as SSML with a leading 300 ms break and XML-escaped
 text; `generate-audio` and `tts-preview` both use it. Stored old Russian Chirp voice ids
-fall back to the current first Russian voice. **Deploy pending:** `generate-audio` and
-`tts-preview` have not yet been redeployed.
+fall back to the current first Russian voice. **Deployed 2026-06-25:** `generate-audio` v7
+and `tts-preview` v5 redeployed; frontend pushed.
 
-### P1.9 — Clipped phrase starts · Done (code) · deploy pending (2026-06-24)
+### P1.9 — Clipped phrase starts · Done (2026-06-24; deployed 2026-06-25)
 The beginning of almost every phrase is swallowed. Two compounding causes: (1) **Bluetooth
 A2DP idle wake-up** — headphones power down the link during the inter-sentence pauses and
 clip ~0.1–0.3 s when the next clip starts (real, known behavior); (2) **the player starts
@@ -232,27 +231,26 @@ weakest for PDF. **Scope decision: new uploads only** — already-uploaded books
 backfilled unless re-uploaded. Best done as one parsing enrichment that feeds all three,
 not three separate passes.
 
-### P4.1 — Auto-fill title & author from the book · Done (code) · deploy pending (2026-06-24)
+### P4.1 — Auto-fill title & author from the book · Done (2026-06-24; deployed 2026-06-25)
 Upload now starts immediately after file selection: the book row is created up front with
 a non-empty filename-derived title, blank author, and `status=processing`. During
 `process-book`, EPUB OPF, FB2 `title-info`, and DOCX `docProps/core.xml` metadata are
 parsed with a pure tested helper and used to update the book. Metadata title replaces the
 filename title when present; metadata author is only written if the current author is
 blank. PDF/TXT/DOC/MOBI keep the filename title for now. Users can rename title/author
-later from the library. **Deploy pending:** the changed `process-book` function has not
-yet been redeployed.
+later from the library. **Deployed 2026-06-25:** `process-book` redeployed; frontend pushed.
 
-### P4.2 — Cover image in Library · Done (code) · deploy pending (2026-06-24)
+### P4.2 — Cover image in Library · Done (2026-06-24; deployed 2026-06-25)
 New EPUB and FB2 uploads now try to extract a cover image during `process-book`. EPUB uses
 the OPF cover manifest reference; FB2 uses `<coverpage>` plus embedded `<binary>` image
 data. Valid covers are capped at 5 MB, uploaded to the public `audio` bucket as
 `bookId/cover.<ext>`, and stored in `books.cover_path`. `BookCard` renders the cover with
 the existing fixed-size box and falls back to the gradient on missing/broken images.
 Deletion explicitly removes the root-level cover object. Cover work is best-effort and
-cannot fail book processing. **Deploy pending:** migration not applied, `process-book` not
-redeployed, frontend not rebuilt into `docs/`.
+cannot fail book processing. **Deployed 2026-06-25:** `cover_path` migration applied,
+`process-book` redeployed, frontend rebuilt + pushed.
 
-### P4.3 — Sections / chapter navigation · Done (code) · deploy pending (2026-06-25)
+### P4.3 — Sections / chapter navigation · Done (2026-06-25)
 Goal: jump between sections. The player engine already supports jump-to-position (windowed
 prepare), so a chapter jump = seek to its first `sentence_order`. **Agreed design (kept
 deliberately simple):**
@@ -271,8 +269,8 @@ deliberately simple):**
   mobile-first app and over-models what is usually a flat chapter list.
 **Implemented in code:** added a `chapters` table migration, pure chapter parsing helpers,
 best-effort chapter row insertion after sentence insertion, and a player Contents sheet
-that maps chapter starts back into the loaded sentence array. **Deploy pending:** migration
-not applied, `process-book` not redeployed, frontend not rebuilt into `docs/`.
+that maps chapter starts back into the loaded sentence array. **Deployed 2026-06-25:**
+`chapters` migration applied, `process-book` redeployed, frontend rebuilt + pushed.
 
 ---
 

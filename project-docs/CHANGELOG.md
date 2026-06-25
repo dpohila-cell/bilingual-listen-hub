@@ -9,8 +9,8 @@ User-visible and project-visible changes, newest first.
   FB2 uses direct top-level sections, and PDF/TXT/DOC/MOBI use a conservative heading
   detector. The player shows a Contents sheet only when a book has more than one stored
   chapter; taps seek through the same prepare/resume path as the range slider. Chapter
-  insertion is best-effort and cannot fail book processing. **Deploy pending:** migration
-  not applied, `process-book` not redeployed, frontend not rebuilt into `docs/`.
+  insertion is best-effort and cannot fail book processing. **Deployed 2026-06-25:**
+  `chapters` migration applied, `process-book` redeployed, frontend rebuilt + pushed.
 
 ## 2026-06-24
 
@@ -19,30 +19,30 @@ User-visible and project-visible changes, newest first.
   `books.cover_path`, and render it in `BookCard`. Cover extraction/upload is strictly
   best-effort: cover failures are skipped and never fail the book. Existing books without
   `cover_path` keep the gradient placeholder, and deletion now explicitly removes the
-  root-level cover object. **Deploy pending:** migration not applied, `process-book` not
-  redeployed, frontend not rebuilt into `docs/`.
+  root-level cover object. **Deployed 2026-06-25:** `cover_path` migration applied,
+  `process-book` redeployed, frontend rebuilt + pushed.
 
 - **Book metadata auto-fill (P4.1):** Upload now starts as soon as a file is selected,
   creating the book with a filename-derived title and blank author before `process-book`
   runs. EPUB, FB2, and DOCX uploads can now auto-fill embedded title/author metadata
   during processing; author is only auto-filled when the current author is blank. The
   library now has a rename dialog for correcting title and author later. PDF/TXT/DOC/MOBI
-  keep the filename title. **Deploy pending:** `process-book` has not yet been redeployed.
+  keep the filename title. **Deployed 2026-06-25:** `process-book` redeployed; frontend pushed.
 
 - **Russian audio quality + clipped-start guard (P1.8/P1.9):** Russian TTS now uses
   Google Wavenet voices with SSML and a 300 ms leading break, while English and Swedish
   remain on Chirp3-HD plain text input. Old stored Russian Chirp voice IDs fall back to
   the first current Russian voice instead of breaking playback. The player now waits for
   `canplay` before calling `play()`, with a 3-second timeout fallback so readiness can
-  never deadlock. **Deploy pending:** `generate-audio` and `tts-preview` have not yet
-  been redeployed.
+  never deadlock. **Deployed 2026-06-25:** `generate-audio` v7 and `tts-preview` v5
+  redeployed; frontend pushed.
 
 - **Robust large-PDF extraction (P1.6):** PDF processing now tries a real text-layer
   parser before OpenAI, avoiding the one-response AI output cap that truncated long PDFs
   after roughly 25-30 pages. The parser is dynamically imported inside a guarded function:
   any import/runtime/parser failure returns `null`, and scanned or low-text PDFs fall back
   to the existing AI extraction path unchanged. Added unit coverage for the pure usability
-  decision helper. **Deploy pending:** `process-book` has not yet been redeployed.
+  decision helper. **Deployed 2026-06-25:** `process-book` redeployed (text-layer PDF live).
 
 - **Clean text before audio (P1.7):** The text extracted from an uploaded book is now
   cleaned before it is saved, so the spoken audio no longer reads invisible junk. Hidden
@@ -52,8 +52,8 @@ User-visible and project-visible changes, newest first.
   breaks are kept, so the split into sentences is unchanged. Implemented as one shared
   `sanitizeExtractedText` helper called at the single point in `process-book` where every
   file format converges, with a unit test built from public-domain text seeded with hidden
-  characters. Typecheck clean, tests 20/20. **Deploy pending:** the `process-book`
-  redeploy was blocked pending explicit authorization, so this is not yet live.
+  characters. Typecheck clean, tests 20/20. **Deployed 2026-06-25:** `process-book`
+  redeployed; the sanitizer is live.
 
 ## 2026-06-23
 
