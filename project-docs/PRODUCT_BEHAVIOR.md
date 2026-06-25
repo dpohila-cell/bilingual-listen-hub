@@ -23,7 +23,9 @@ bilingually (original language + one target language) with generated speech.
 - Accepted formats (single source of truth = `ACCEPTED_FORMATS` in `src/lib/uploadValidation.ts`):
   EPUB, FB2, TXT, DOC, DOCX, PDF, MOBI, AZW, AZW3. PDF is extracted from its text layer
   first, with OpenAI kept as the fallback for scanned PDFs, low-text PDFs, or parser
-  failures; the rest use built-in parsers.
+  failures; if that PDF fallback returns an empty/degenerate refusal instead of document
+  text, the book is marked `error` and no sentences are stored. The rest use built-in
+  parsers.
 - A book becomes `ready` only when it is genuinely processed. A book that is still
   `processing` (or failed) must not be presented or opened as if ready.
 - Upload starts immediately after file selection. The initial `books.title` is derived
@@ -96,6 +98,9 @@ Agreed rules:
   throw), it marks the book `error` so the library shows a real failure the user
   can delete and re-upload — it must not hang as "Processing" forever. `ready` is
   reached only when the book is genuinely processed.
+- If PDF text-layer extraction is unusable and the OpenAI fallback refuses or returns no
+  real text, `process-book` returns a readable extraction error and leaves the book in
+  `error` instead of storing the refusal text as a ready book.
 - If audio cannot be generated (e.g. Google billing disabled, invalid voice),
   `generate-audio` returns a real error (`502` with Google's message) and the player shows
   it — it must not stop silently.

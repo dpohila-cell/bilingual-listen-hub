@@ -38,8 +38,10 @@ RLS: users can only read/write their own books, their own books' sentences (via
 
 ## Edge functions (`supabase/functions/`)
 
-- `process-book` — reads the uploaded file, extracts text per format (PDF via OpenAI;
-  EPUB/DOCX via ZIP parsing; MOBI/AZW via PalmDoc; DOC via OLE2; FB2/TXT natively),
+- `process-book` — reads the uploaded file, extracts text per format (PDF via a bundled
+  `unpdf` text-layer parser first, with OpenAI fallback for scanned/low-text/parser
+  failures and refusal detection on that fallback; EPUB/DOCX via ZIP parsing; MOBI/AZW
+  via PalmDoc; DOC via OLE2; FB2/TXT natively),
   extracts best-effort title/author metadata for EPUB, FB2, and DOCX, extracts a
   best-effort cover for EPUB and FB2, detects language (by script first, OpenAI fallback),
   builds best-effort chapter metadata around the same flattened sentence list, stores

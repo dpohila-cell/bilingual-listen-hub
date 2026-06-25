@@ -5,7 +5,8 @@ import {
   generateText,
   getOpenAIApiKey,
 } from "../_shared/openai.ts";
-import { extractPdfText, isExtractionUsable } from "../_shared/pdfText.ts";
+import { extractPdfText } from "../_shared/pdfExtract.ts";
+import { isExtractionUsable, looksLikeExtractionRefusal } from "../_shared/pdfText.ts";
 import {
   parseDocxCoreMetadata,
   parseFb2Metadata,
@@ -808,6 +809,18 @@ Deno.serve(async (req) => {
       } else {
         console.log("PDF: falling back to AI extraction (scanned or low text layer)");
         text = await extractTextFromPdfWithAI(bytes, openAIApiKey);
+        if (looksLikeExtractionRefusal(text)) {
+          await supabase.from("books").update({ status: "error" }).eq("id", bookId);
+          return new Response(
+            JSON.stringify({
+              error: "Could not extract text from this PDF — it may be image-only (scanned) or the content is restricted.",
+            }),
+            {
+              status: 422,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
       }
       chapters = splitTextIntoChaptersSafe(text);
     } else if (isZip(bytes)) {

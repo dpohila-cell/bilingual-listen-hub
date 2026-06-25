@@ -142,7 +142,7 @@ export default function UploadPage() {
         setCurrentProcess(4);
         navigate(`/player/${book.id}?autoplay=1`, { replace: true });
       } else if (updatedBook?.status === 'error') {
-        toast.error('Failed to process book. Please try again.');
+        toast.error("Couldn't read this file — it may be image-only (scanned) or the content is restricted. Try a different file or format.");
         setStep('select');
       } else {
         toast('Your book is still being processed. It will appear in your library when ready.');

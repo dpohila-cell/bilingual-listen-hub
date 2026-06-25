@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isExtractionUsable } from "../../supabase/functions/_shared/pdfText.ts";
+import {
+  isExtractionUsable,
+  looksLikeExtractionRefusal,
+} from "../../supabase/functions/_shared/pdfText.ts";
 
 describe("isExtractionUsable", () => {
   it("returns false for null input from scanned PDFs or parser failures", () => {
@@ -40,5 +43,33 @@ describe("isExtractionUsable", () => {
         pagesWithText: 10,
       }),
     ).toBe(false);
+  });
+});
+
+describe("looksLikeExtractionRefusal", () => {
+  it("returns true for a short refusal apology", () => {
+    expect(
+      looksLikeExtractionRefusal(
+        "I'm sorry, but I can't provide or reproduce copyrighted text from this PDF.",
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for a normal long paragraph containing sorry", () => {
+    const text = Array.from(
+      { length: 12 },
+      () =>
+        "The narrator said sorry in passing, then continued with ordinary public-domain style prose about the room, the weather, and the people arriving for dinner.",
+    ).join(" ");
+
+    expect(looksLikeExtractionRefusal(text)).toBe(false);
+  });
+
+  it("returns true for empty text", () => {
+    expect(looksLikeExtractionRefusal("   ")).toBe(true);
+  });
+
+  it("returns false for a short legitimate sentence without refusal phrasing", () => {
+    expect(looksLikeExtractionRefusal("Chapter One. The evening was quiet and clear.")).toBe(false);
   });
 });

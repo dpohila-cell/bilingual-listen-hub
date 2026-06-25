@@ -112,10 +112,13 @@ Also still open from before: inline base64 in the Responses API is capped (~33.5
 (`Array.from(bytes).map(...).join('')`) is memory-heavy.
 **Fixed in code:** PDF processing now tries `unpdf` text-layer extraction first and uses
 the parsed text only when enough pages contain meaningful text and the total extracted
-letters are sufficient. The `unpdf` import is dynamic and wrapped in `try/catch`, so
-import-time or parser failures return `null` and degrade to the unchanged OpenAI
-extraction path. AI remains the fallback for scanned/image PDFs and weak text layers.
-**Deployed 2026-06-25:** `process-book` redeployed (v13+); text-layer PDF live.
+letters are sufficient. The runtime `unpdf` import now lives in `pdfExtract.ts` with a
+literal `import("npm:unpdf")`, so Supabase can see and bundle the parser; import-time or
+parser failures still return `null` and degrade to the OpenAI extraction path. AI remains
+the fallback for scanned/image PDFs and weak text layers, but short empty/refusal outputs
+from that fallback now mark the book `error` instead of `ready`.
+**Corrected 2026-06-25:** previous deployed bundle was too small to include `unpdf`
+because the import used a variable specifier. The fix makes the import literal.
 
 ### P1.7 — Sanitize extracted text before storage · Done (2026-06-24; deployed 2026-06-25)
 Hidden/invisible characters leaked from extraction into `sentences.original_text` (the

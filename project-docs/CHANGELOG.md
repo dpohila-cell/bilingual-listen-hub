@@ -4,6 +4,14 @@ User-visible and project-visible changes, newest first.
 
 ## 2026-06-25
 
+- **PDF parser bundling + refusal guard:** PDF text-layer extraction now lives in a
+  runtime-only `pdfExtract` module that uses a literal `import("npm:unpdf")`, so Supabase
+  can see and bundle the parser. The pure `pdfText` helper no longer imports `unpdf`,
+  keeping Vitest focused on deterministic text heuristics. If the PDF AI fallback returns
+  an empty or short refusal instead of extracted text, `process-book` marks the book
+  `error` and the upload page shows a clearer scanned/restricted-content message instead
+  of storing the refusal as a ready book.
+
 - **Chapter navigation (P4.3):** New uploads can now save optional chapter/section
   bookmarks without changing the flattened `sentences` pipeline. EPUB uses spine files,
   FB2 uses direct top-level sections, and PDF/TXT/DOC/MOBI use a conservative heading
