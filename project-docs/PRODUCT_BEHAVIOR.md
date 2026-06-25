@@ -34,6 +34,11 @@ bilingually (original language + one target language) with generated speech.
 - New EPUB and FB2 uploads may also extract a cover image for the library card. Cover
   extraction is best-effort only: if the image is missing, malformed, too large, or fails
   to upload, the book still processes normally and keeps the existing gradient placeholder.
+- New uploads may also store chapter/section bookmarks. EPUB uses non-empty spine files,
+  FB2 uses direct top-level body sections, and PDF/TXT/DOC/MOBI use a deliberately
+  conservative heading detector (`Chapter`, `Глава`, `Kapitel`). Chapter extraction is
+  metadata only: the flattened `sentences` list remains the source used for empty checks,
+  language detection, first-playable translation, inserts, and playback.
 - Extracted text is sanitized before it is stored as `sentences.original_text` (the text
   the TTS reads verbatim). Hidden/invisible characters that would make speech synthesis
   mispronounce or stall — control characters, zero-width and bidi marks, soft hyphens,
@@ -79,6 +84,10 @@ Agreed rules:
 - Pausing or seeking immediately cancels in-flight playback.
 - Before each clip starts, playback waits for browser `canplay` readiness and falls back
   to starting after about 3 seconds so it cannot hang forever.
+- Books with more than one stored chapter show a flat Contents drawer in the player.
+  Choosing a chapter seeks to that chapter's first sentence through the same preparation
+  path as the range slider, so untranslated or unvoiced windows still show the normal
+  preparation wait.
 
 ## Failure behavior
 

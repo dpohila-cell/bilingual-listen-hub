@@ -2,6 +2,16 @@
 
 User-visible and project-visible changes, newest first.
 
+## 2026-06-25
+
+- **Chapter navigation (P4.3):** New uploads can now save optional chapter/section
+  bookmarks without changing the flattened `sentences` pipeline. EPUB uses spine files,
+  FB2 uses direct top-level sections, and PDF/TXT/DOC/MOBI use a conservative heading
+  detector. The player shows a Contents sheet only when a book has more than one stored
+  chapter; taps seek through the same prepare/resume path as the range slider. Chapter
+  insertion is best-effort and cannot fail book processing. **Deploy pending:** migration
+  not applied, `process-book` not redeployed, frontend not rebuilt into `docs/`.
+
 ## 2026-06-24
 
 - **Book covers in Library (P4.2):** New EPUB and FB2 uploads can now extract a cover

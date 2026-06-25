@@ -53,6 +53,41 @@ export type Database = {
         }
         Relationships: []
       }
+      chapters: {
+        Row: {
+          book_id: string
+          chapter_index: number
+          created_at: string | null
+          id: string
+          start_sentence_order: number
+          title: string | null
+        }
+        Insert: {
+          book_id: string
+          chapter_index: number
+          created_at?: string | null
+          id?: string
+          start_sentence_order: number
+          title?: string | null
+        }
+        Update: {
+          book_id?: string
+          chapter_index?: number
+          created_at?: string | null
+          id?: string
+          start_sentence_order?: number
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chapters_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string

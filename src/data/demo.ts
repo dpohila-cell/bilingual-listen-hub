@@ -34,10 +34,10 @@ export const demoBooks: Book[] = [
 ];
 
 export const demoChapters: Chapter[] = [
-  { id: 'ch1', bookId: '1', chapterNumber: 1, chapterTitle: 'The Drawing' },
-  { id: 'ch2', bookId: '1', chapterNumber: 2, chapterTitle: 'The Little Prince Appears' },
-  { id: 'ch3', bookId: '1', chapterNumber: 3, chapterTitle: 'The Asteroid' },
-  { id: 'ch4', bookId: '1', chapterNumber: 4, chapterTitle: 'The Rose' },
+  { id: 'ch1', bookId: '1', chapterIndex: 0, title: 'The Drawing', startSentenceOrder: 1 },
+  { id: 'ch2', bookId: '1', chapterIndex: 1, title: 'The Little Prince Appears', startSentenceOrder: 6 },
+  { id: 'ch3', bookId: '1', chapterIndex: 2, title: 'The Asteroid', startSentenceOrder: 12 },
+  { id: 'ch4', bookId: '1', chapterIndex: 3, title: 'The Rose', startSentenceOrder: 18 },
 ];
 
 export const demoSentences: Sentence[] = [

@@ -59,8 +59,9 @@ export interface Book {
 export interface Chapter {
   id: string;
   bookId: string;
-  chapterNumber: number;
-  chapterTitle: string;
+  chapterIndex: number;
+  title: string | null;
+  startSentenceOrder: number;
 }
 
 export interface Sentence {

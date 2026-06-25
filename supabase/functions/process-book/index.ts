@@ -17,6 +17,12 @@ import {
   findEpubCoverHref,
   findFb2CoverBinaryId,
 } from "../_shared/cover.ts";
+import {
+  extractEpubChapterTitle,
+  parseFb2TopLevelSections,
+  splitTextIntoChapters,
+  type ExtractedChapter,
+} from "../_shared/chapters.ts";
 import { sanitizeExtractedText, splitIntoSentences } from "../_shared/text.ts";
 import { translateTexts } from "../_shared/translation.ts";
 
@@ -32,6 +38,12 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024;
 interface ExtractedCover {
   bytes: Uint8Array;
   contentType: string;
+}
+
+interface ChapterRow {
+  chapter_index: number;
+  title: string | null;
+  start_sentence_order: number;
 }
 
 // ── Text utilities ──────────────────────────────────────────────
@@ -142,6 +154,84 @@ function getLanguageSample(sentences: string[]): string {
     .filter((sentence) => sentence.length >= 20);
   const source = usefulSentences.length > 0 ? usefulSentences : sentences;
   return source.slice(0, 80).join(" ").slice(0, 4000);
+}
+
+function singleChapter(text: string): ExtractedChapter[] {
+  return [{ title: null, text }];
+}
+
+function splitTextIntoChaptersSafe(text: string): ExtractedChapter[] {
+  try {
+    return splitTextIntoChapters(text);
+  } catch (error) {
+    console.warn("Chapter heading split skipped:", error);
+    return singleChapter(text);
+  }
+}
+
+function extractEpubChapterTitleSafe(html: string): string | null {
+  try {
+    return extractEpubChapterTitle(html);
+  } catch {
+    return null;
+  }
+}
+
+function buildFb2Chapters(xml: string, fallbackText: string): ExtractedChapter[] {
+  try {
+    const sections = parseFb2TopLevelSections(xml);
+    const chapters: ExtractedChapter[] = [];
+
+    for (const section of sections) {
+      const text = stripHtmlTags(section.innerXml).trim();
+      if (text.length === 0) continue;
+      chapters.push({
+        title: section.title ?? `Chapter ${chapters.length + 1}`,
+        text,
+      });
+    }
+
+    return chapters.length > 0 ? chapters : singleChapter(fallbackText);
+  } catch (error) {
+    console.warn("FB2 chapter extraction skipped:", error);
+    return singleChapter(fallbackText);
+  }
+}
+
+function buildSentencePipeline(
+  chapters: ExtractedChapter[],
+  fallbackText: string,
+): { sentences: string[]; chapterRows: ChapterRow[] } {
+  try {
+    const sourceChapters = chapters.length > 0 ? chapters : singleChapter(fallbackText);
+    const sentences: string[] = [];
+    const chapterRows: ChapterRow[] = [];
+
+    for (const chapter of sourceChapters) {
+      const chTextSan = sanitizeExtractedText(chapter.text);
+      const chSents = splitIntoSentences(chTextSan);
+      if (chSents.length === 0) continue;
+
+      chapterRows.push({
+        chapter_index: chapterRows.length,
+        title: chapter.title,
+        start_sentence_order: sentences.length + 1,
+      });
+      sentences.push(...chSents);
+    }
+
+    return { sentences, chapterRows };
+  } catch (error) {
+    console.warn("Chapter-aware sentence pipeline skipped:", error);
+    const sanitized = sanitizeExtractedText(fallbackText);
+    const sentences = splitIntoSentences(sanitized);
+    return {
+      sentences,
+      chapterRows: sentences.length > 0
+        ? [{ chapter_index: 0, title: null, start_sentence_order: 1 }]
+        : [],
+    };
+  }
 }
 
 function detectLanguageByScript(text: string): "ru" | "sv" | null {
@@ -327,7 +417,12 @@ function extractTextFromMobi(bytes: Uint8Array): string {
 
 // ── EPUB extraction ─────────────────────────────────────────────
 
-function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMetadata; cover: ExtractedCover | null } {
+function extractTextFromEpub(buffer: ArrayBuffer): {
+  text: string;
+  meta: BookMetadata;
+  cover: ExtractedCover | null;
+  chapters: ExtractedChapter[];
+} {
   const bytes = new Uint8Array(buffer);
   const files = unzipSync(bytes);
   let meta: BookMetadata = {};
@@ -390,15 +485,22 @@ function extractTextFromEpub(buffer: ArrayBuffer): { text: string; meta: BookMet
   }
 
   const textParts: string[] = [];
+  const chapters: ExtractedChapter[] = [];
   for (const path of orderedFiles) {
     const data = files[path] || files[decodeURIComponent(path)];
     if (!data) continue;
     const html = new TextDecoder("utf-8").decode(data);
     const text = stripHtmlTags(html).trim();
-    if (text.length > 0) textParts.push(text);
+    if (text.length > 0) {
+      textParts.push(text);
+      chapters.push({
+        title: extractEpubChapterTitleSafe(html) ?? `Chapter ${chapters.length + 1}`,
+        text,
+      });
+    }
   }
 
-  return { text: textParts.join("\n\n"), meta, cover };
+  return { text: textParts.join("\n\n"), meta, cover, chapters };
 }
 
 // ── DOCX extraction ─────────────────────────────────────────────
@@ -693,6 +795,7 @@ Deno.serve(async (req) => {
 
     // Extract text based on format
     let text: string;
+    let chapters: ExtractedChapter[] = [];
     let meta: BookMetadata = {};
     let cover: ExtractedCover | null = null;
 
@@ -706,6 +809,7 @@ Deno.serve(async (req) => {
         console.log("PDF: falling back to AI extraction (scanned or low text layer)");
         text = await extractTextFromPdfWithAI(bytes, openAIApiKey);
       }
+      chapters = splitTextIntoChaptersSafe(text);
     } else if (isZip(bytes)) {
       // ZIP-based formats: EPUB, DOCX, or FB2 inside ZIP
       const files = unzipSync(bytes);
@@ -720,6 +824,7 @@ Deno.serve(async (req) => {
           meta = parseDocxCoreMetadata(coreXml);
         }
         text = extractTextFromDocx(rawBuffer);
+        chapters = singleChapter(text);
       } else {
         // Assume EPUB
         console.log("Detected EPUB format, extracting...");
@@ -727,15 +832,18 @@ Deno.serve(async (req) => {
         text = epub.text;
         meta = epub.meta;
         cover = epub.cover;
+        chapters = epub.chapters;
       }
     } else if (isMobi(bytes) || ext === "mobi" || ext === "azw" || ext === "azw3") {
       // ── MOBI/AZW: native PalmDoc parser ──
       console.log("Detected MOBI/AZW format, extracting...");
       text = extractTextFromMobi(bytes);
+      chapters = splitTextIntoChaptersSafe(text);
     } else if (isOle2(bytes) || ext === "doc") {
       // ── DOC (OLE2): extract text natively from OLE2 compound document ──
       console.log("Detected DOC format, extracting text from OLE2...");
       text = extractTextFromDoc(bytes);
+      chapters = splitTextIntoChaptersSafe(text);
     } else {
       // Plain text or FB2
       text = decodeText(rawBuffer);
@@ -743,13 +851,19 @@ Deno.serve(async (req) => {
         console.log("Detected FB2 format, extracting...");
         meta = parseFb2Metadata(text);
         cover = extractCoverFromFb2(text);
-        text = extractTextFromFb2(text);
+        const fb2Xml = text;
+        text = extractTextFromFb2(fb2Xml);
+        chapters = buildFb2Chapters(fb2Xml, text);
+      } else {
+        chapters = splitTextIntoChaptersSafe(text);
       }
     }
 
-    text = sanitizeExtractedText(text);
+    if (chapters.length === 0) {
+      chapters = singleChapter(text);
+    }
 
-    const sentences = splitIntoSentences(text);
+    const { sentences, chapterRows } = buildSentencePipeline(chapters, text);
 
     if (sentences.length === 0) {
       await supabase.from("books").update({ status: "error" }).eq("id", bookId);
@@ -799,7 +913,8 @@ Deno.serve(async (req) => {
     }
     await supabase.from("books").update(bookUpdate).eq("id", bookId);
 
-    // Delete any existing sentences for this book (in case of retry)
+    // Delete any existing chapter metadata and sentences for this book (in case of retry)
+    await supabase.from("chapters").delete().eq("book_id", bookId);
     await supabase.from("sentences").delete().eq("book_id", bookId);
 
     // Step 1: Save ALL sentences with original text only (no translations yet)
@@ -822,6 +937,22 @@ Deno.serve(async (req) => {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+    }
+
+    if (chapterRows.length > 0) {
+      try {
+        const { error: chapterInsertError } = await supabase.from("chapters").insert(
+          chapterRows.map((chapter) => ({
+            book_id: bookId,
+            ...chapter,
+          })),
+        );
+        if (chapterInsertError) {
+          console.warn("Chapter insert skipped:", chapterInsertError);
+        }
+      } catch (error) {
+        console.warn("Chapter insert skipped:", error);
       }
     }
 

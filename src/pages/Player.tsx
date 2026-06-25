@@ -7,16 +7,18 @@ import { usePlayer } from '@/hooks/usePlayer';
 import { useGenerateAudio } from '@/hooks/useGenerateAudio';
 import { useTranslateBatch } from '@/hooks/useTranslateBatch';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
-import { Settings2, ChevronDown, BookOpen, Loader2 } from 'lucide-react';
+import { Settings2, ChevronDown, BookOpen, Loader2, ListTree } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Sentence, Language } from '@/types';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import type { Sentence, Language, Chapter } from '@/types';
 import type { Database } from '@/integrations/supabase/types';
 
 type SentenceRow = Database['public']['Tables']['sentences']['Row'];
+type ChapterRow = Database['public']['Tables']['chapters']['Row'];
 
 // Fetch all sentences with pagination to overcome the 1000-row limit
 async function fetchAllSentences(bookId: string) {
@@ -116,6 +118,7 @@ export default function Player() {
   const { bookId } = useParams<{ bookId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showSettings, setShowSettings] = useState(false);
+  const [contentsOpen, setContentsOpen] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -157,6 +160,20 @@ export default function Player() {
     enabled: !!bookId && book?.status === 'ready',
   });
 
+  const { data: dbChapters = [] } = useQuery({
+    queryKey: ['chapters', bookId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('chapters')
+        .select('*')
+        .eq('book_id', bookId!)
+        .order('chapter_index', { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!bookId && book?.status === 'ready',
+  });
+
   const { data: savedProgress, isFetched: progressFetched } = useQuery({
     queryKey: ['progress', bookId, user?.id],
     queryFn: async () => {
@@ -184,6 +201,24 @@ export default function Player() {
       })),
     [dbSentences]
   );
+  const chapters: Chapter[] = useMemo(
+    () =>
+      dbChapters.map((chapter: ChapterRow) => ({
+        id: chapter.id,
+        bookId: chapter.book_id,
+        chapterIndex: chapter.chapter_index,
+        title: chapter.title,
+        startSentenceOrder: chapter.start_sentence_order,
+      })),
+    [dbChapters]
+  );
+  const sentenceOrderIndex = useMemo(() => {
+    const index = new Map<number, number>();
+    sentences.forEach((sentence, arrayIndex) => {
+      index.set(sentence.sentenceOrder, arrayIndex);
+    });
+    return index;
+  }, [sentences]);
   const originalLanguage = (book?.original_language || 'en') as Language;
 
   const hasTextForLanguage = useCallback((sentence: Sentence, language: Language) => {
@@ -454,8 +489,11 @@ export default function Player() {
     return !hasTextForLanguage(sentence, settings.language1) || !hasTextForLanguage(sentence, settings.language2);
   })();
 
-  const handleSeek = (newIndex: number) => {
-    const targetSentence = sentences[newIndex];
+  const seekToIndex = (newIndex: number) => {
+    if (sentences.length === 0) return;
+
+    const targetIndex = Math.max(0, Math.min(newIndex, sentences.length - 1));
+    const targetSentence = sentences[targetIndex];
     const needsTranslation = targetSentence
       ? !hasTextForLanguage(targetSentence, settings.language1) || !hasTextForLanguage(targetSentence, settings.language2)
       : false;
@@ -464,22 +502,37 @@ export default function Player() {
     if (isPlaying) pause();
 
     if (bookId && book?.status === 'ready') {
-      if (isSentencePrepared(newIndex)) {
-        goTo(newIndex);
+      if (isSentencePrepared(targetIndex)) {
+        goTo(targetIndex);
         if (shouldResume) play();
         return;
       }
 
       void (async () => {
-        const ready = await ensureSentenceReady(newIndex, false);
+        const ready = await ensureSentenceReady(targetIndex, false);
         if (!ready) return;
-        goTo(newIndex);
+        goTo(targetIndex);
         if (shouldResume) play();
       })();
       return;
     }
 
-    goTo(newIndex);
+    goTo(targetIndex);
+  };
+
+  const getChapterStartIndex = (chapter: Chapter) => {
+    const exactIndex = sentenceOrderIndex.get(chapter.startSentenceOrder);
+    if (exactIndex != null) return exactIndex;
+
+    const fallbackIndex = sentences.findIndex(
+      (sentence) => sentence.sentenceOrder >= chapter.startSentenceOrder
+    );
+    return fallbackIndex >= 0 ? fallbackIndex : Math.max(sentences.length - 1, 0);
+  };
+
+  const jumpToChapter = (chapter: Chapter) => {
+    seekToIndex(getChapterStartIndex(chapter));
+    setContentsOpen(false);
   };
 
   const handlePlayPause = () => {
@@ -516,7 +569,7 @@ export default function Player() {
             value={currentIndex}
             onChange={(e) => {
               const newIndex = Number(e.target.value);
-              handleSeek(newIndex);
+              seekToIndex(newIndex);
             }}
             className="w-full h-2 rounded-full appearance-none cursor-pointer
               [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-10
@@ -591,19 +644,64 @@ export default function Player() {
       )}
 
       <div className="fixed bottom-[57px] left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border py-3">
-        <div className="mx-auto max-w-lg">
-        <PlayerControls
-          isPlaying={isPlaying}
-          onPlayPause={handlePlayPause}
-          onPrev={goToPrev}
-          onNext={goToNext}
-          onRewind={skipBackward}
-          onForward={skipForward}
-          canPrev={currentIndex > 0}
-          canNext={currentIndex < totalSentences - 1}
-        />
+        <div className="mx-auto flex max-w-lg flex-col gap-2 px-5">
+          {chapters.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setContentsOpen(true)}
+              className="mx-auto flex h-9 items-center gap-2 rounded-full border border-border bg-background px-4 text-sm text-foreground shadow-sm transition-colors hover:bg-muted"
+            >
+              <ListTree className="h-4 w-4" />
+              Contents
+            </button>
+          )}
+          <PlayerControls
+            isPlaying={isPlaying}
+            onPlayPause={handlePlayPause}
+            onPrev={goToPrev}
+            onNext={goToNext}
+            onRewind={skipBackward}
+            onForward={skipForward}
+            canPrev={currentIndex > 0}
+            canNext={currentIndex < totalSentences - 1}
+          />
         </div>
       </div>
+
+      <Sheet open={contentsOpen} onOpenChange={setContentsOpen}>
+        <SheetContent side="bottom" className="z-[60] max-h-[75vh] overflow-y-auto rounded-t-xl px-5 pb-8 pt-6">
+          <SheetHeader className="text-left">
+            <SheetTitle>Contents</SheetTitle>
+          </SheetHeader>
+          <div className="mt-5 flex flex-col gap-2">
+            {chapters.map((chapter, chapterListIndex) => {
+              const targetIndex = getChapterStartIndex(chapter);
+              const nextChapter = chapters[chapterListIndex + 1];
+              const nextTargetIndex = nextChapter ? getChapterStartIndex(nextChapter) : sentences.length;
+              const isCurrent =
+                currentIndex >= targetIndex &&
+                currentIndex < nextTargetIndex;
+              return (
+                <button
+                  key={chapter.id}
+                  type="button"
+                  onClick={() => jumpToChapter(chapter)}
+                  className={`flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition-colors ${
+                    isCurrent ? 'bg-primary text-primary-foreground' : 'bg-muted/60 hover:bg-muted'
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {chapter.title?.trim() || `Chapter ${chapter.chapterIndex + 1}`}
+                  </span>
+                  <span className={`shrink-0 text-xs ${isCurrent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                    {targetIndex + 1}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

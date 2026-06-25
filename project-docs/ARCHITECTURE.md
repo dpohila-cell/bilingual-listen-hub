@@ -18,11 +18,14 @@ rules live in `PRODUCT_BEHAVIOR.md`.
   optional `cover_path`, `status` (`processing` | `ready` | `error`), `sentence_count`.
 - `sentences` — `book_id`, `sentence_order`, `original_text`, and `en_translation`,
   `ru_translation`, `sv_translation` (nullable until translated).
+- `chapters` — optional per-book navigation metadata for new uploads:
+  `chapter_index`, `title`, and `start_sentence_order`. This table points into
+  `sentences`; it does not replace the flattened sentence pipeline.
 - `user_progress` — last read position per (user, book).
 - `function_logs` — diagnostic log rows written by edge functions.
 
 RLS: users can only read/write their own books, their own books' sentences (via
-`user_owns_book`), and their own progress.
+`user_owns_book`), their own chapters (via `user_owns_book`), and their own progress.
 
 ## Storage
 
@@ -39,7 +42,8 @@ RLS: users can only read/write their own books, their own books' sentences (via
   EPUB/DOCX via ZIP parsing; MOBI/AZW via PalmDoc; DOC via OLE2; FB2/TXT natively),
   extracts best-effort title/author metadata for EPUB, FB2, and DOCX, extracts a
   best-effort cover for EPUB and FB2, detects language (by script first, OpenAI fallback),
-  splits into sentences, stores them, and translates the first batch.
+  builds best-effort chapter metadata around the same flattened sentence list, stores
+  sentences, stores chapter rows best-effort, and translates the first batch.
 - `translate-batch` — translates one range of sentences on demand (used by the player).
   This is the only translation path; the whole-book `translate-all` background job was
   removed (windowed model — see `PRODUCT_BEHAVIOR.md`). `process-book` still translates
@@ -57,18 +61,20 @@ All functions use `verify_jwt=false` at the platform and validate the user thems
 1. File uploaded to the `ebooks` bucket; a `books` row is created with `status=processing`,
    a filename-derived title, and a blank author.
 2. `process-book` extracts text, auto-fills supported file metadata, detects language,
-   stores sentences, translates the first batch.
+   stores sentences, stores optional chapter start positions, translates the first batch.
 3. The client reads the book's stored `status` (set by `process-book`): `ready` → generate
    the first audio batch and open the player; `error` → show a failure message; still
    `processing` → send the user to the library where it shows a processing badge.
 
 ### Playback (`Player` + `usePlayer`)
 1. All sentences are fetched (paginated past the 1000-row limit) into memory.
-2. Before playing a batch, the player ensures the window is translated (`translate-batch`)
+2. Optional chapters are fetched and mapped back to the in-memory sentence array by
+   `start_sentence_order`.
+3. Before playing a batch, the player ensures the window is translated (`translate-batch`)
    and voiced (`generate-audio`) for both languages, then preloads the MP3s.
-3. `usePlayer` plays language 1, pauses, plays language 2, pauses, advances. A
+4. `usePlayer` plays language 1, pauses, plays language 2, pauses, advances. A
    generation counter cancels stale playback when the user pauses or seeks.
-4. When 5 sentences remain in the current window, the next window is prepared silently.
+5. When 5 sentences remain in the current window, the next window is prepared silently.
 
 ## Frontend key modules
 

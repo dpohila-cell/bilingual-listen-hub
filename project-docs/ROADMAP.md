@@ -252,14 +252,14 @@ Deletion explicitly removes the root-level cover object. Cover work is best-effo
 cannot fail book processing. **Deploy pending:** migration not applied, `process-book` not
 redeployed, frontend not rebuilt into `docs/`.
 
-### P4.3 — Sections / chapter navigation · Planned
+### P4.3 — Sections / chapter navigation · Done (code) · deploy pending (2026-06-25)
 Goal: jump between sections. The player engine already supports jump-to-position (windowed
 prepare), so a chapter jump = seek to its first `sentence_order`. **Agreed design (kept
 deliberately simple):**
 - **Structure from the file when present:** EPUB spine items and FB2 `<section>` give real,
   stable chapter boundaries (filter out empty/very short front-matter sections).
 - **Structureless formats (TXT, and PDF/DOC text after extraction):** a cheap deterministic
-  heading regex (e.g. `^(chapter|глава|kapitel)\s+\w+`, short all-caps lines). No AI — avoids
+  heading regex (e.g. `^(chapter|глава|kapitel)\s+\w+`). No AI — avoids
   hallucinated, non-deterministic chapters and avoids enlarging the fragile PDF extraction.
 - **AI-inferred chapters: deferred.** Rejected for the default path because (a) it mixes
   guesses with file-truth, (b) the real cost is re-aligning AI output to our own sentence
@@ -269,8 +269,10 @@ deliberately simple):**
 - **UI: a flat "Contents" drawer/sheet** (tap a chapter → jump), **not** a left
   Explorer-style folder tree — the tree is a desktop metaphor that clashes with this
   mobile-first app and over-models what is usually a flat chapter list.
-Needs a data-model addition (a chapter index/title on sentences, or a chapters table). Do
-last of the three.
+**Implemented in code:** added a `chapters` table migration, pure chapter parsing helpers,
+best-effort chapter row insertion after sentence insertion, and a player Contents sheet
+that maps chapter starts back into the loaded sentence array. **Deploy pending:** migration
+not applied, `process-book` not redeployed, frontend not rebuilt into `docs/`.
 
 ---
 
