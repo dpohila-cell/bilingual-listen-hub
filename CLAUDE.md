@@ -52,10 +52,11 @@ When Codex is available as an MCP tool, Claude orchestrates Codex directly; the 
 is not the relay.
 
 1. Work out the logic of the change with the user in plain language.
-2. Claude sends the plan to Codex for critique. Codex returns issues/risks only — no
-   code in this step.
-3. For large or architectural changes, Claude states the finalized plan and waits for
-   the user's explicit "ok" before coding. Small changes proceed directly.
+2. Claude states the plan and waits for the user's explicit "ok" before anything is
+   sent to Codex or any code is written.
+3. After the user's "ok", Claude sends the plan to Codex for critique. Codex returns
+   issues/risks only — no code in this step. If the critique changes the plan's
+   meaning or scope, Claude re-confirms with the user before implementation.
 4. Claude gives Codex the implementation task. Codex writes the code and runs
    `npx tsc --noEmit -p tsconfig.app.json` and `npm test`.
 5. Claude reads the actual diff (not Codex's report) and judges one thing: does this
