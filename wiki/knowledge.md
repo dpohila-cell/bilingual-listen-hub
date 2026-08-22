@@ -2,8 +2,6 @@
 
 ## Contents
 
-Navigation to every knowledge section belongs here.
-
 - [Headline](#headline)
 - [Findings](#findings)
 - [Rules and concepts](#rules-and-concepts)
@@ -13,30 +11,122 @@ Navigation to every knowledge section belongs here.
 
 ## Headline
 
-The two most important findings belong here, one sentence each.
+The app turns an uploaded ebook into sentence-by-sentence translation with
+generated speech, in English, Russian and Swedish.
+
+Two paid-quota security holes were found and closed here: an unauthenticated
+endpoint that anyone could spend Google TTS credit through, and a storage policy
+that let any signed-in user read, overwrite or delete any other user's audio.
 
 ## Findings
 
-Findings assembled from one or more sources belong here.
+### An endpoint checked that a token existed, not that it was valid
+
+`tts-preview` only checked for the presence of an `Authorization` header and
+never called `auth.getUser()`. Anyone who knew the endpoint could spend Google
+Text-to-Speech quota, which is money rather than inconvenience. The fix applied
+the same `getUser()` check the other functions already used, and it was verified
+live: a non-user token now returns `401` where it previously returned audio.
+
+The general shape is worth carrying: a header that is present is not a user who
+is authenticated, and the difference is invisible until someone bills you.
+
+[sources: `docs/project-docs/ROADMAP.md` 336c…1dfa]
+
+### A storage policy named the wrong role, so everyone was the service
+
+The `audio` bucket carried a "Service role can manage audio" policy that applied
+to role `public`, meaning every user. Any user could read, overwrite or delete
+any other user's audio. The policy's name described intent while its role
+described reality.
+
+In the same area, deleting a book left paid files behind: the ebook was removed
+by `[bookId]` instead of by `books.file_path`, and audio deletion walked two path
+levels while the files live three deep at `bookId/lang/voice/file`.
+
+[sources: `docs/project-docs/ROADMAP.md` 336c…1dfa]
+
+### Every list that must not drift has one named home in code
+
+The documentation refuses to restate lists that live in code, and names the file
+instead: voices in `VOICE_OPTIONS` in `src/types/index.ts`, accepted upload
+formats in `ACCEPTED_FORMATS` in `src/lib/uploadValidation.ts`. The documents
+point at those rather than copying them.
+
+This is why the format list and the voice list cannot quietly diverge between the
+code and the docs.
+
+[sources: `docs/project-docs/PRODUCT_BEHAVIOR.md` 0267…11d5]
+
+### PDF is read from its text layer first, and the fallback can fail invisibly
+
+A PDF is extracted from its own text layer first, with OpenAI kept as the
+fallback for scanned PDFs, low-text PDFs, and parser failures. The behaviour
+document goes further than the happy path: it records that the fallback can
+return an empty or degenerate refusal instead of document text, which is a
+failure that looks like an empty book rather than like an error.
+
+[sources: `docs/project-docs/PRODUCT_BEHAVIOR.md` 0267…11d5, `README.md` e726…4bde]
+
+### A configuration variable exists that the app never reads
+
+`VITE_SUPABASE_PROJECT_ID` is kept for reference and tooling, but the application
+code reads only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. The
+README says so explicitly and names the file that proves it,
+`src/integrations/supabase/client.ts`.
+
+Recorded because an unused variable in a config file is exactly what a future
+reader will spend an hour changing before discovering it does nothing.
+
+[sources: `README.md` e726…4bde]
+
+### The whole app is static files plus a managed backend
+
+The frontend is a single-page app served as static files from `docs/` on GitHub
+Pages at `bi-reader.lynxpilot.io`. Everything else is Supabase: Auth, Postgres,
+Storage, and Edge Functions on Deno. Every Postgres table carries row-level
+security. The external paid services are OpenAI, for translation, PDF extraction
+and fallback language detection, and Google Cloud Text-to-Speech for audio.
+
+[sources: `docs/project-docs/ARCHITECTURE.md` b529…3e37]
 
 ## Rules and concepts
 
-Reusable rules, definitions, and concepts belong here.
+### The document that describes behaviour is the one to change first
+
+`PRODUCT_BEHAVIOR.md` calls itself authoritative for upload, translation, audio
+and playback, and requires being kept consistent with any change. `ARCHITECTURE.md`
+holds the map, and `ROADMAP.md` holds the backlog with a status that flips to
+`Done` and is then recorded in `CHANGELOG.md`.
+
+[sources: `docs/project-docs/PRODUCT_BEHAVIOR.md` 0267…11d5, `docs/project-docs/ARCHITECTURE.md` b529…3e37, `docs/project-docs/ROADMAP.md` 336c…1dfa]
 
 ## Things
 
-Products, tools, organisations, and people belong here.
+- **Supabase**: Auth, Postgres, Storage and Edge Functions for this app.
+- **OpenAI**: translation, PDF text extraction, fallback language detection.
+- **Google Cloud Text-to-Speech**: Chirp3-HD voices for English and Swedish,
+  Wavenet with SSML for Russian.
+- **bi-reader.lynxpilot.io**: where the static frontend is served.
 
 ## Sources
 
-One row for every ingested file, including its content fingerprint (hash), belongs here.
-
 | File | Hash | Class |
 |---|---|---|
+| AGENTS.md | `e7a8…9b3d` | decision-grade |
+| CLAUDE.md | `857a…2c96` | decision-grade |
+| docs/project-docs/ARCHITECTURE.md | `b529…3e37` | decision-grade |
+| docs/project-docs/CHANGELOG.md | `ea68…12f3` | decision-grade |
+| docs/project-docs/PRODUCT_BEHAVIOR.md | `0267…11d5` | decision-grade |
+| docs/project-docs/ROADMAP.md | `336c…1dfa` | decision-grade |
+| docs/robots.txt | `5271…4cea` | decision-grade |
+| public/robots.txt | `5271…4cea` | decision-grade |
+| raw/thinking/.PROMPTS.md | `ea13…2f8a` | exploratory |
+| README.md | `e726…4bde` | decision-grade |
 
 ## Open questions
 
-Only what genuinely still needs the user belongs here. A contradiction found
-during ingest is resolved in the same session where evidence can settle it, and
-its resolution is recorded under Findings rather than left as a question. Say
-plainly when nothing is outstanding.
+1. The project shares Supabase and OpenAI with at least two other projects in
+   this workspace. The central wiki already records that as a cross-project
+   dependency for two of them; this is the third, and `/connect` should fold it
+   in.
