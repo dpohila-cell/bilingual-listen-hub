@@ -181,3 +181,7 @@ sentence**, never the whole book up front. Decided with the user:
 
 The remaining backlog (this decision plus both audits, consolidated) lives in
 `project-docs/ROADMAP.md`. Do not duplicate the item list here — ROADMAP owns it.
+
+## Fixed-path documents
+
+- `public/robots.txt` (served at the site root; a crawler looks for it there and nowhere else)
