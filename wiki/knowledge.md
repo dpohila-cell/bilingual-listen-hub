@@ -114,7 +114,7 @@ holds the map, and `ROADMAP.md` holds the backlog with a status that flips to
 | File | Hash | Class |
 |---|---|---|
 | AGENTS.md | `e7a8…9b3d` | decision-grade |
-| CLAUDE.md | `857a…2c96` | decision-grade |
+| CLAUDE.md | `cd1e…6ac4` | decision-grade |
 | docs/project-docs/ARCHITECTURE.md | `b529…3e37` | decision-grade |
 | docs/project-docs/CHANGELOG.md | `ea68…12f3` | decision-grade |
 | docs/project-docs/PRODUCT_BEHAVIOR.md | `0267…11d5` | decision-grade |

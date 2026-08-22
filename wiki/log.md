@@ -72,3 +72,10 @@ HASH: e726fa5caa8077f924e54b09d41f5e7344c03a0ecc36612218c2839af3ef4bde
 AFFECTED:
 - wiki/knowledge.md
 
+2026-08-22 23:11
+SOURCE: CLAUDE.md
+STATUS: modified
+HASH: cd1e70ebce6712733cd1ec723cce5af1a2d63a9ddbe8590c1f89c7cae0976ac4
+AFFECTED:
+- wiki/knowledge.md
+
