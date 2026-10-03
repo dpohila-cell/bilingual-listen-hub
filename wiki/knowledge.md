@@ -101,16 +101,22 @@ holds the map, and `ROADMAP.md` holds the backlog with a status that flips to
 
 [sources: `docs/project-docs/PRODUCT_BEHAVIOR.md` 0267…11d5, `docs/project-docs/ARCHITECTURE.md` b529…3e37, `docs/project-docs/ROADMAP.md` 336c…1dfa]
 
-### AGENTS.md is now a pointer, not a second rule set
+### CLAUDE.md and AGENTS.md are now both pointers; the rule set lives in PROJECT_INSTRUCTIONS.md
 
-On 2026-10-03 the rules that used to live in `AGENTS.md` (deployment workflow,
-verification, documentation rules, environment facts, project notes) were moved
-into `CLAUDE.md`, which now carries the full rule set for the project.
-`AGENTS.md` keeps only the operating-agreement pointer and routes Codex to
-`CLAUDE.md` for everything else. The project now has one rule set to keep
-current instead of two files that could drift apart.
+Superseded the same day it was written. An earlier 2026-10-03 change had just
+consolidated `AGENTS.md`'s rules into `CLAUDE.md`. A second change later that
+day carried the consolidation one step further: the full rule set (deployment
+workflow, verification, documentation rules, environment facts, project notes)
+moved out of `CLAUDE.md` into a new tool-neutral file, `PROJECT_INSTRUCTIONS.md`.
+`CLAUDE.md` and `AGENTS.md` now both hold only a short reading-order pointer
+(workspace instructions, then `PROJECT_INSTRUCTIONS.md`) and no rule content of
+their own. `PROJECT_INSTRUCTIONS.md` opens with a header stating the project's
+deliberate override of the default role split: Claude audits, plans, orchestrates
+Codex, and reviews diffs; Codex writes the application code. The project now has
+one rule set read by every tool, instead of rules split across entry files that
+could drift apart.
 
-[sources: `AGENTS.md` 67fb…ee0c, `CLAUDE.md` 3463…523d]
+[sources: `AGENTS.md` 4ff8…4392, `CLAUDE.md` 9721…5b87, `PROJECT_INSTRUCTIONS.md` 8b81…965f]
 
 ## Things
 
@@ -124,13 +130,14 @@ current instead of two files that could drift apart.
 
 | File | Hash | Class |
 |---|---|---|
-| AGENTS.md | `67fb…ee0c` | decision-grade |
-| CLAUDE.md | `3463…523d` | decision-grade |
+| AGENTS.md | `4ff8…4392` | decision-grade |
+| CLAUDE.md | `9721…5b87` | decision-grade |
 | docs/project-docs/ARCHITECTURE.md | `b529…3e37` | decision-grade |
 | docs/project-docs/CHANGELOG.md | `ea68…12f3` | decision-grade |
 | docs/project-docs/PRODUCT_BEHAVIOR.md | `0267…11d5` | decision-grade |
 | docs/project-docs/ROADMAP.md | `336c…1dfa` | decision-grade |
 | docs/robots.txt | `5271…4cea` | decision-grade |
+| PROJECT_INSTRUCTIONS.md | `8b81…965f` | decision-grade |
 | public/robots.txt | `5271…4cea` | decision-grade |
 | raw/thinking/.PROMPTS.md | `ea13…2f8a` | exploratory |
 | README.md | `e726…4bde` | decision-grade |
