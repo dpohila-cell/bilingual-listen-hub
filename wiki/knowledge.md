@@ -101,6 +101,17 @@ holds the map, and `ROADMAP.md` holds the backlog with a status that flips to
 
 [sources: `docs/project-docs/PRODUCT_BEHAVIOR.md` 0267…11d5, `docs/project-docs/ARCHITECTURE.md` b529…3e37, `docs/project-docs/ROADMAP.md` 336c…1dfa]
 
+### AGENTS.md is now a pointer, not a second rule set
+
+On 2026-10-03 the rules that used to live in `AGENTS.md` (deployment workflow,
+verification, documentation rules, environment facts, project notes) were moved
+into `CLAUDE.md`, which now carries the full rule set for the project.
+`AGENTS.md` keeps only the operating-agreement pointer and routes Codex to
+`CLAUDE.md` for everything else. The project now has one rule set to keep
+current instead of two files that could drift apart.
+
+[sources: `AGENTS.md` 67fb…ee0c, `CLAUDE.md` 3463…523d]
+
 ## Things
 
 - **Supabase**: Auth, Postgres, Storage and Edge Functions for this app.
@@ -113,8 +124,8 @@ holds the map, and `ROADMAP.md` holds the backlog with a status that flips to
 
 | File | Hash | Class |
 |---|---|---|
-| AGENTS.md | `e7a8…9b3d` | decision-grade |
-| CLAUDE.md | `cd1e…6ac4` | decision-grade |
+| AGENTS.md | `67fb…ee0c` | decision-grade |
+| CLAUDE.md | `3463…523d` | decision-grade |
 | docs/project-docs/ARCHITECTURE.md | `b529…3e37` | decision-grade |
 | docs/project-docs/CHANGELOG.md | `ea68…12f3` | decision-grade |
 | docs/project-docs/PRODUCT_BEHAVIOR.md | `0267…11d5` | decision-grade |

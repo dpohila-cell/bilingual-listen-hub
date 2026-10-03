@@ -79,3 +79,17 @@ HASH: cd1e70ebce6712733cd1ec723cce5af1a2d63a9ddbe8590c1f89c7cae0976ac4
 AFFECTED:
 - wiki/knowledge.md
 
+2026-10-03 16:55
+SOURCE: AGENTS.md
+STATUS: modified
+HASH: 67fbc4946a066b5cafac297d69073be42a29418045f2be201b3b2c0ee990ee0c
+AFFECTED:
+- wiki/knowledge.md
+
+2026-10-03 16:55
+SOURCE: CLAUDE.md
+STATUS: modified
+HASH: 346386bbe754d2ef442e1ddd20567c59ac0da629bab782fe4bcfde0d248d523d
+AFFECTED:
+- wiki/knowledge.md
+
