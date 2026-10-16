@@ -118,6 +118,24 @@ could drift apart.
 
 [sources: `AGENTS.md` 4ff8…4392, `CLAUDE.md` 9721…5b87, `PROJECT_INSTRUCTIONS.md` 8b81…965f]
 
+### `private/` is ordinary project material, filed by person
+
+The project keeps a `private/` folder for personal material that belongs with
+this project rather than elsewhere. Since the 2026-10-12 workspace decision,
+`private/` is not excluded from knowledge work: `/ingest` reads it and `/sync`
+propagates what is derived from it, the same as any other folder. The only
+boundary that still applies is publication outwards; a live password, key, or
+token is never stored there regardless.
+
+Its own convention for layout: general career material files directly under
+`private/<person-slug>/`; dated application deliverables go under
+`private/<person-slug>/outputs/<event-slug>/`; material for a person who
+cannot yet be identified safely goes under `private/unsorted/` until it can be
+moved. The folder currently holds only this README and a placeholder; no
+person-slug material exists yet.
+
+[sources: `private/README.md` a54e…94a7]
+
 ## Things
 
 - **Supabase**: Auth, Postgres, Storage and Edge Functions for this app.
@@ -137,6 +155,7 @@ could drift apart.
 | docs/project-docs/PRODUCT_BEHAVIOR.md | `0267…11d5` | decision-grade |
 | docs/project-docs/ROADMAP.md | `336c…1dfa` | decision-grade |
 | docs/robots.txt | `5271…4cea` | decision-grade |
+| private/README.md | `a54e…94a7` | decision-grade |
 | PROJECT_INSTRUCTIONS.md | `8b81…965f` | decision-grade |
 | public/robots.txt | `5271…4cea` | decision-grade |
 | raw/thinking/.PROMPTS.md | `ea13…2f8a` | exploratory |
